@@ -1,0 +1,14 @@
+.build/
+.xcodebuild/
+.local-runs/
+.venv-ref/
+/reference/
+*.profraw
+.DS_Store
+xcuserdata/
+*.xcodeproj
+outputs/
+.pi/sessions/
+.pi/npm/
+__pycache__/
+*.pyc

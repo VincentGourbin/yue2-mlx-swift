@@ -1,0 +1,5 @@
+{
+  "keepRecentTokens": 8000,
+  "reserveTokens": 4096,
+  "sessionDir": ".pi/sessions"
+}
