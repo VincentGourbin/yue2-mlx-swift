@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.4
 // Package.swift - YuE2 music generation for Apple Silicon (MLX)
 // Copyright 2026 Vincent Gourbin
 
@@ -6,7 +6,7 @@ import PackageDescription
 
 let package = Package(
     name: "YuE2Swift",
-    platforms: [.macOS(.v15)],
+    platforms: [.macOS(.v15), .iOS(.v27)],
     products: [
         // MARK: - Libraries
         .library(name: "YuE2Core", targets: ["YuE2Core"]),
@@ -32,7 +32,13 @@ let package = Package(
                 .product(name: "MLXFast", package: "mlx-swift"),
                 .product(name: "Tokenizers", package: "swift-transformers"),
                 .product(name: "MLXProfiler", package: "swift-mlx-profiler"),
-            ]
+            ],
+            // T-6.3 (E3): Core AI, macOS/iOS 27.0+ only. Every call site is
+            // `#if canImport(CoreAI)` + `@available(macOS 27.0, iOS 27.0, *)`-guarded, and the
+            // framework is NOT linked explicitly: the iOS *simulator* SDK does not ship CoreAI
+            // (found 2026-09-21 building yue2-ios), so an explicit `.linkedFramework` breaks
+            // simulator builds. Swift auto-links the framework wherever `import CoreAI` compiles.
+            linkerSettings: []
         ),
         // MARK: - CLI Tools
         .executableTarget(

@@ -15,6 +15,7 @@ public enum YuE2Error: Error, CustomStringConvertible {
     case weightMismatch(String)
     case nonFiniteLatents
     case cancelled
+    case backendUnavailable(String)
 
     public var description: String {
         switch self {
@@ -23,6 +24,7 @@ public enum YuE2Error: Error, CustomStringConvertible {
         case .weightMismatch(let reason): return "weight mismatch: \(reason)"
         case .nonFiniteLatents: return "non-finite latents"
         case .cancelled: return "cancelled"
+        case .backendUnavailable(let reason): return "backend unavailable: \(reason)"
         }
     }
 }

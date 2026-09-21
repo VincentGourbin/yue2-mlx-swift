@@ -23,6 +23,18 @@ struct NARParityTests {
         }
     }
 
+    /// T-6.2 (E2): the recomputed positional table (used when `pe` is omitted from an "-all"
+    /// iPhone pack) must match the checkpoint's loaded buffer exactly, not just approximately.
+    @Test func computedLatentPositionsMatchLoadedBuffer() throws {
+        let model = try loadedTinyModel()
+        let count = 5
+        let indices = MLXArray((0..<count).map { Int32($0) })
+        let fromBuffer = model.latentPositions(count: count)
+        let computed = YuE2ForCausalLM.computeLatentPositions(
+            indices: indices, hiddenSize: model.config.hiddenSize, dtype: model.vae2llm.weight.dtype)
+        #expect(maxAbsDiff(fromBuffer, computed) <= 1e-5) // fp32 tiny model, pitfall #5 convention
+    }
+
     @Test func songChunksSplitsAndOffsetsCodec() throws {
         let prefix = [2, 3]
         let codec = Array(0..<11)

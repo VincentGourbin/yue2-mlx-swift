@@ -3,6 +3,7 @@
 
 import Foundation
 import MLX
+import MLXRandom
 import Testing
 @testable import YuE2Core
 
@@ -55,6 +56,22 @@ struct RealVAEParityTests {
         let vsTorchRel = relativeError(tiledNCL, referenceTiled)
         #expect(vsTorchMax <= Self.toleranceAbs, "tiled vs torch max|Δ| \(vsTorchMax)")
         #expect(vsTorchRel <= Self.toleranceRel, "tiled vs torch rel error \(vsTorchRel)")
+    }
+
+    /// E1 (plan/13-ios-backend.md §13.5): fp16 weights/compute, measured against this same
+    /// model's own fp32 output (not the PyTorch fixture) — the question is fp16-vs-fp32.
+    @Test func fp16DecodeStaysAboveMinimumSNR() throws {
+        let dir = try #require(modelsDir())
+        let fp32 = try YuE2VAE.load(directory: dir.appendingPathComponent("YuE2-Vae"))
+        let fp16 = try YuE2VAE.load(directory: dir.appendingPathComponent("YuE2-Vae"), precision: .fp16)
+
+        let latent = MLXRandom.normal([1, 40, 64], key: MLXRandom.key(11))
+        let reference = fp32.decode(latent)
+        let ours = fp16.decode(latent)
+
+        #expect(MLX.all(MLX.isFinite(ours)).item(Bool.self), "fp16 decode produced non-finite values")
+        let snr = snrDB(reference: reference, test: ours)
+        #expect(snr > 40, "fp16 SNR \(snr) dB, expected > 40 dB")
     }
 
     @Test func encodeMatchesTorch() throws {

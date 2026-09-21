@@ -30,3 +30,11 @@ func relativeError(_ a: MLXArray, _ b: MLXArray) -> Float {
 func maxAbs(_ a: MLXArray, _ b: MLXArray) -> Float {
     MLX.max(MLX.abs(a.asType(.float32) - b.asType(.float32))).item(Float.self)
 }
+
+/// `10*log10(Σref² / Σ(ref-test)²)`, in dB — higher is better (E1, plan/13-ios-backend.md §13.5).
+func snrDB(reference: MLXArray, test: MLXArray) -> Float {
+    let ref32 = reference.asType(.float32)
+    let signal = MLX.sum(ref32 * ref32).item(Float.self)
+    let noise = MLX.sum(MLX.square(ref32 - test.asType(.float32))).item(Float.self)
+    return 10 * log10(signal / noise)
+}

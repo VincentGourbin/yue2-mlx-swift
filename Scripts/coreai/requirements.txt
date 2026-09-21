@@ -1,0 +1,4 @@
+# Core AI toolchain (iOS 27 / macOS 27, successor to Core ML for neural networks).
+# Install: uv pip install --python .venv-ref/bin/python -r Scripts/coreai/requirements.txt
+coreai-torch==0.4.2
+coreai-core==1.0.0b2

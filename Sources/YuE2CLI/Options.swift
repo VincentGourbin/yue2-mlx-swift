@@ -18,12 +18,22 @@ struct ModelOptions: ParsableArguments {
 
     @Flag(name: .long, help: "Also quantize lm_head under --quant (RestrictedHead dequantizes rows on demand).")
     var quantHead: Bool = false
+
+    @Option(name: .long, help: "Compute precision for unquantized weights/activations: bf16 (default) or fp16 (E2).")
+    var precision: YuE2ComputePrecision = .bf16
 }
 
 /// `ModelSession.Quantization` (a `YuE2Quantization` alias) lives in `YuE2Core`, which has no
 /// `ArgumentParser` dependency; the default `RawRepresentable where RawValue: ExpressibleByArgument`
 /// conformance (`RawValue == String`) is picked up here instead, in the one target that imports both.
 extension ModelSession.Quantization: ExpressibleByArgument {}
+extension YuE2ComputePrecision: ExpressibleByArgument {}
+/// T-6.2 (E2) sensitivity sweep only, `yue2 parity nar --sweep-family`.
+extension YuE2NARSweep.Family: ExpressibleByArgument {}
+/// T-6.3 (E3): `--vae-backend`/`--backend` on `decode`/`parity vae`.
+extension VAEBackendKind: ExpressibleByArgument {}
+/// T-6.4 (E4): `--backend` on `parity nar`/`bench-coreai-nar`.
+extension NARBackendKind: ExpressibleByArgument {}
 
 /// Builds a `SongRequest` from `--request <json>` and/or individual overrides, mirroring
 /// `cli.py`'s `generate()`: a request file is the base, then any flag present overrides that

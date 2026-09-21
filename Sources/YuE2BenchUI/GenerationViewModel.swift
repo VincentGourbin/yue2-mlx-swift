@@ -127,7 +127,7 @@ final class GenerationViewModel {
                         minTokens: frames, maxTokens: frames + 200)
                 }
 
-                let result = try unsafePipeline.generate(
+                let result = try await unsafePipeline.generate(
                     request: request, semanticSampling: semanticSampling, profiling: profilingSession,
                     onEvent: { event in
                         Task { @MainActor [weak self] in self?.apply(event) }

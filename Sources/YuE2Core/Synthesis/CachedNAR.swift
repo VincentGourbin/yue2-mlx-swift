@@ -124,4 +124,47 @@ public final class CachedNAR {
         let raw = Foundation.log(t / (1 - t))
         return Swift.min(Swift.max(raw, -20), 20)
     }
+
+    /// The AR prefix's cache and this chunk's `arLength`/`narLength` — `CoreAINARStack.init`
+    /// needs these once per chunk to stack/pad K/V and build the padding mask (T-6.4, E4);
+    /// exposed read-only rather than duplicated, since `CachedNAR` already owns them.
+    public var arPrefixCache: KVCache { cache }
+    public var chunkARLength: Int { arLength }
+    public var chunkNARLength: Int { narLength }
+
+    /// Same midpoint solve as `solve(steps:...)`, but every `velocity` evaluation goes through
+    /// `backend` instead of this instance's own MLX computation — `yue2 parity nar --backend
+    /// coreai-*`/`yue2 bench-coreai-nar` (T-6.4, E4). Never the default path: every existing
+    /// caller of `solve(steps:...)` keeps running synchronous, MLX-only, exactly as before.
+    public func solve(
+        steps: Int = 32, backend: NARVelocityBackend,
+        onProgress: ((Int, Int) -> Void)? = nil, cancel: (() -> Bool)? = nil
+    ) async throws -> MLXArray {
+        guard steps >= 1 else {
+            throw YuE2Error.invalidRequest("steps must be a positive integer")
+        }
+        var state = noise.asType(.float16)
+        let dt = 1.0 / Double(steps)
+        for step in 0..<steps {
+            if cancel?() == true {
+                throw YuE2Error.cancelled
+            }
+            let t = 1.0 - Double(step) * dt
+            let first = try await backend.velocity(state: state, rawT: Self.clampedLogit(t)).asType(state.dtype)
+            let mid = state - first * MLXArray(Float(dt / 2)).asType(state.dtype)
+            if cancel?() == true {
+                throw YuE2Error.cancelled
+            }
+            let second = try await backend.velocity(state: mid, rawT: Self.clampedLogit(t - dt / 2)).asType(state.dtype)
+            state = state - second * MLXArray(Float(dt)).asType(state.dtype)
+            eval(state)
+            onProgress?(step + 1, steps)
+        }
+        let result = state.asType(.float32)
+        eval(result)
+        guard MLX.all(MLX.isFinite(result)).item(Bool.self) else {
+            throw YuE2Error.nonFiniteLatents
+        }
+        return result
+    }
 }

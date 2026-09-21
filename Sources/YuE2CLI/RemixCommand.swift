@@ -61,7 +61,8 @@ struct RemixCommand: AsyncParsableCommand {
 
         YuE2MemoryManager.configure(for: .ar)
         let session = try await ModelSession.load(
-            modelsDir: modelsDir, quant: modelOptions.quant, quantizeHead: modelOptions.quantHead)
+            modelsDir: modelsDir, quant: modelOptions.quant, quantizeHead: modelOptions.quantHead,
+            precision: modelOptions.precision)
         let vaeModel = try YuE2VAE.load(directory: modelsDir.appendingPathComponent(vae.model.directoryName))
 
         let planner = Planner(model: session.model, tokenizer: session.tokenizer, config: session.config)

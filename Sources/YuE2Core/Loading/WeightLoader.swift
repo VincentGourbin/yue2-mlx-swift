@@ -22,7 +22,17 @@ public enum WeightLoader {
 
     /// Applies `weights` to `module`, throwing if any expected parameter has no tensor or any
     /// tensor matches no parameter — a silent partial load is worse than a crash here.
-    public static func apply(_ weights: [String: MLXArray], to module: Module, component: String) throws {
+    ///
+    /// `retaining` (stage-scoped residency, `WeightResidency.swift`): when given, the coverage
+    /// check still runs over every key, but only the tensors it selects are applied and
+    /// evaluated — the others stay as the module's own unevaluated init zeros, i.e. cost no
+    /// memory until `loadWeights(of:)` brings them in. `loadArrays` is lazy (safetensors are
+    /// memory-mapped and each tensor materializes on its own `eval`), so skipping the eval is
+    /// what makes the skipped branch free.
+    public static func apply(
+        _ weights: [String: MLXArray], to module: Module, component: String,
+        retaining: ((String) -> Bool)? = nil
+    ) throws {
         let expected = Set(module.parameters().flattened().map(\.0))
         let provided = Set(weights.keys)
         let missing = expected.subtracting(provided)
@@ -34,10 +44,11 @@ public enum WeightLoader {
                 "\(component): missing=[\(missingList)] unexpected=[\(unexpectedList)]"
             )
         }
-        module.update(parameters: ModuleParameters.unflattened(weights))
+        let retained = retaining.map { keep in weights.filter { keep($0.key) } } ?? weights
+        module.update(parameters: ModuleParameters.unflattened(retained))
         // Piège n°8: eval tensor by tensor, never `eval(model.parameters())` on the whole tree
         // at once — that materializes everything simultaneously and can OOM silently.
-        for (_, value) in weights {
+        for (_, value) in retained {
             eval(value)
         }
     }

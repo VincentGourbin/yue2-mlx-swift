@@ -41,6 +41,12 @@ enum YuE2PrequantizedCheckpoint {
 
         var arrays = [String: MLXArray]()
         for (key, value) in model.parameters().flattened() { arrays[key] = value }
+        // "-all" presets (T-6.2, E2) never ship `latent_pos_embed.pe` (~100 MB) — recomputed on
+        // load instead (`NARModules.computeLatentPositions`). It is already absent here whenever
+        // `model` was itself built with `computePE: true`, but the first-time export path always
+        // loads the full bf16 checkpoint (`pe` present) before quantizing, so drop it explicitly.
+        let omitsPE = quantization.isAllPreset
+        if omitsPE { arrays["latent_pos_embed.pe"] = nil }
         // Piège n°8: eval tensor by tensor before writing, never the whole tree at once.
         for (_, value) in arrays { eval(value) }
 
@@ -54,6 +60,7 @@ enum YuE2PrequantizedCheckpoint {
                 "quantize_head": quantizeHead ? "1" : "0",
                 "bits": "\(descriptor.bits)",
                 "group_size": "\(descriptor.groupSize)",
+                "pe": omitsPE ? "computed" : "loaded",
             ],
             url: temporary
         )
@@ -65,7 +72,8 @@ enum YuE2PrequantizedCheckpoint {
     /// with the *same* preset (`YuE2QuantizationFilter.apply`) — this only replaces arrays, it
     /// never changes which modules are `QuantizedLinear`.
     static func load(
-        into model: YuE2ForCausalLM, from fileURL: URL, quantization: YuE2Quantization, quantizeHead: Bool
+        into model: YuE2ForCausalLM, from fileURL: URL, quantization: YuE2Quantization, quantizeHead: Bool,
+        retaining: ((String) -> Bool)? = nil
     ) throws {
         let (arrays, metadata) = try loadArraysAndMetadata(url: fileURL)
         guard metadata["format"] == format,
@@ -78,6 +86,7 @@ enum YuE2PrequantizedCheckpoint {
         }
         try WeightLoader.apply(
             arrays, to: model,
-            component: "YuE2ForCausalLM [prequantized \(presetName(quantization, quantizeHead: quantizeHead))]")
+            component: "YuE2ForCausalLM [prequantized \(presetName(quantization, quantizeHead: quantizeHead))]",
+            retaining: retaining)
     }
 }

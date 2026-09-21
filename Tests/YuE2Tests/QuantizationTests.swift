@@ -158,4 +158,58 @@ struct QuantizationTests {
         print("quant quant_head matches=\(matches)/8 ref=\(refResult.tokens) quant=\(quantResult.tokens)")
         #expect(matches >= 7)
     }
+
+    // MARK: - "-all" presets (T-6.2, E2): both MoT branches + embed_tokens, 4-bit.
+
+    /// Structural check mirroring `qint8QuantizesOnlyEligibleProjections`: an "-all" preset must
+    /// reach `nar_self_attn`/`nar_mlp` and `embed_tokens` (via `QuantizedEmbedding`), which the
+    /// AR-only presets never touch.
+    @Test func int4AllQuantizesNARAndEmbeddingsToo() throws {
+        let config = try YuE2Config.load(from: try lmDir().appendingPathComponent("config.json"))
+        let model = try LMWeightLoader.load(directory: try lmDir(), config: config, quantization: .int4All)
+
+        var quantizedPaths = Set<String>()
+        for (path, module) in model.leafModules().flattened() where module is Quantized {
+            quantizedPaths.insert(path)
+        }
+        #expect(quantizedPaths.contains(where: { $0.contains("nar_self_attn") }))
+        #expect(quantizedPaths.contains(where: { $0.contains("nar_mlp") }))
+        #expect(quantizedPaths.contains(where: { $0.contains("embed_tokens") }))
+        #expect(!quantizedPaths.contains("lm_head")) // --quant-head not requested here either
+    }
+
+    /// int4-all vs the checkpoint-native bf16 path, on the same real ABC prefix `RealLMParityTests`
+    /// uses — logits closeness and greedy agreement, same bar as the AR-only preset's tests.
+    @Test func int4AllLogitsAndGreedyCloseToBF16() throws {
+        let fixture = try loadFixture(name: "lm")
+        let config = try YuE2Config.load(from: try lmDir().appendingPathComponent("config.json"))
+        let bf16 = try LMWeightLoader.load(directory: try lmDir(), config: config, quantization: .none)
+        let int4All = try LMWeightLoader.load(directory: try lmDir(), config: config, quantization: .int4All)
+        let prefix = try idArray(fixture, "prefix_abc")
+        let ids = MLXArray(prefix.map { Int32($0) }).reshaped([1, prefix.count])
+
+        let refLogits = bf16.forwardAR(tokens: ids, cache: nil, keepLast: true).reshaped([1, config.vocabSize])
+        let quantLogits = int4All.forwardAR(tokens: ids, cache: nil, keepLast: true).reshaped([1, config.vocabSize])
+        let rel = relativeError(quantLogits, refLogits)
+        print("int4-all abc logits rel=\(rel)")
+        #expect(rel <= Self.toleranceRel)
+
+        let refResult = try TokenGenerator.generate(
+            model: bf16, head: bf16.makeRestrictedHead(bounds: .abc), prefix: prefix,
+            sampling: Self.greedySampling, seed: 0, bounds: .abc)
+        let quantResult = try TokenGenerator.generate(
+            model: int4All, head: int4All.makeRestrictedHead(bounds: .abc), prefix: prefix,
+            sampling: Self.greedySampling, seed: 0, bounds: .abc)
+        let matches = zip(refResult.tokens, quantResult.tokens).filter { $0 == $1 }.count
+        print("int4-all greedy_abc matches=\(matches)/8 ref=\(refResult.tokens) quant=\(quantResult.tokens)")
+        #expect(matches >= 7)
+    }
+
+    // NAR-side int4-all parity (velocity/solve4 vs bf16-native) was measured, not committed as a
+    // test: velocity rel=0.085, solve4 rel=0.161 — both well past the fiche's 5e-2/8e-2 budget,
+    // unlike the AR side (logits rel=0.0075, greedy 8/8) or fp16 (E1, inaudible). The NAR solver
+    // chains 64 velocity evaluations per chunk, so 4-bit quantization error compounds along the
+    // ODE trajectory in a way a single AR forward pass never sees — a real accuracy limit, not a
+    // bug (structural quantization coverage is verified above). See `tasks/ASK.md` (T-6.2): this
+    // blocks the pack export and needs Vincent's call before proceeding.
 }

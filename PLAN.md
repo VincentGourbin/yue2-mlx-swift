@@ -1,7 +1,7 @@
 # YuE2-mlx-swift — Plan d'implémentation
 
 > **Statut : rév. 1 du 2026-09-16 — plan initial, rédigé après lecture intégrale de la référence Python (`src/yue2/*.py`, 3 785 lignes) et inventaire des briques réutilisables dans les dépôts frères.** Document de référence **local**. Le journal d'exécution (REQUEST / RÉPONSE / Étapes) sera ajouté à la suite du §12.
-> Roadmap : **Jalon 1 (fondations + VAE) → Jalon 2 (backbone AR : plan ABC + tokens sémantiques) → Jalon 3 (NAR flow matching + chanson complète) → Jalon 4 (optimisations + GUI de bench)**. À chaque jalon, Vincent teste lui-même.
+> Roadmap : **Jalon 1 (fondations + VAE) → Jalon 2 (backbone AR : plan ABC + tokens sémantiques) → Jalon 3 (NAR flow matching + chanson complète) → Jalon 4 (optimisations + GUI de bench)** — tous validés au 2026-09-19 — puis **Jalon 5 (encodeur VAE, hors plan initial)** et **Jalon 6 (backend iPhone, `plan/13-ios-backend.md`)**. À chaque jalon, Vincent teste lui-même.
 > Cible matérielle : MacBook Pro M3 Max, 96 Go RAM unifiée, macOS 27, Xcode 27 (Swift 6.4). Poids stockés sous `$YUE2_MODELS_DIR` (jamais de chemin absolu dans le dépôt).
 > Référence Python : https://github.com/multimodal-art-projection/YuE (commit `ef1936f`, 2026-09-16), paquet `yue2-infer 0.1.6`. Poids : `m-a-p/YuE2-3B` (7,26 Go bf16), `m-a-p/YuE2-Vae` (530 Mo fp32).
 
@@ -40,6 +40,7 @@
 | `plan/10-ecosysteme.md` | 10. Écosystème — brique → dépôt → fichier | 376 |
 | `plan/11-risques.md` | 11. Risques | 265 |
 | `plan/12-decisions.md` | 12. Décisions actées et questions restantes | 144 |
+| `plan/13-ios-backend.md` | 13. Jalon 6 — Backend iPhone (MLX 4 bits + Core ML / Neural Engine) | 2100 |
 | `plan/annexe-A-fixtures.md` | Annexe A — Squelette de `Scripts/reference/tiny_fixtures.py` (à compléter en 1.3) | 374 |
 | `plan/annexe-B-claude-md.md` | Annexe B — `CLAUDE.md` à créer en 1.0 (contenu de départ, à maintenir) | 329 |
 | `plan/annexe-C-commandes.md` | Annexe C — Commandes de référence | 95 |

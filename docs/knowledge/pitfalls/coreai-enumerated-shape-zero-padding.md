@@ -1,0 +1,9 @@
+# Piège — formes énumérées Core AI : le zéro-padding des latents contamine la fin de la tuile
+
+**Symptôme** (T-6.3, 2026-09-20) : décodeur VAE Core AI GPU exact à 53-55 dB sur chaque forme énumérée (288/544/1056 frames), mais 33,75 dB une fois tuilé (1100 frames, tuile 1024 + halo 16) ; la dernière tuile (92 frames réelles, complétée à 288 par des zéros) tombait à 20,7 dB. Core AI avait été écarté pour le VAE sur cette base (option D).
+
+**Cause** : compléter une tuile par des *latents* nuls n'est pas équivalent au padding nul des *activations* que fait la convolution elle-même en bord de signal. Un latent nul traverse `conv + biais` puis `SnakeBeta` et produit des activations non nulles qui se propagent, par l'intervalle de dépendance du décodeur (≈ 14 frames latentes : conv k7 d'entrée, unités résiduelles dilatées 1/3/9 à chaque étage, convs transposées), dans les ≈ 14 dernières frames réelles de la tuile — précisément celles que le crop conserve quand la tuile est la dernière du signal. Le tuilage MLX n'a jamais ce problème : il ne complète rien.
+
+**Correctif** (`planVAETiles`, `Sources/YuE2Core/Backends/VAEDecoding.swift`, 2026-09-21) : pour un backend à formes énumérées, chaque fenêtre est élargie — à droite d'abord, puis à gauche, jamais au-delà du signal — jusqu'à la plus petite forme énumérée qui la contient ; les frames ajoutées ne sont que du contexte, le crop du cœur est inchangé. Le padding par zéros ne subsiste que pour un signal plus court que la plus petite forme (< 288 frames ≈ 11,5 s). Résultat : `yue2 parity vae --backend coreai-gpu` → **54,7 dB** tuilé (pire tuile 53,3 dB, pire couture 54,9 dB), identique pour les tuiles 1024 et 256 — `PARITY OK`.
+
+**Règle** : avec un runtime à formes fixes, ne jamais compléter un signal par des valeurs nulles côté *entrée du réseau* ; choisir la fenêtre pour que la forme soit exacte, et ne compléter qu'en dernier recours en sachant que ≈ 14 frames avant le padding sont fausses.

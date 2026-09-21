@@ -45,7 +45,10 @@ public final class KVCache {
         for v in values.values { eval(v) }
     }
 
-    func clone() -> KVCache {
+    /// Public: `yue2 bench-coreai-nar` (T-6.4, E4) needs one independent cache per backend under
+    /// test, from outside `YuE2Core` — every existing in-module caller still uses the cache
+    /// `CachedNAR`/`TokenGenerator.prefill` hand it directly, unaffected by this being public too.
+    public func clone() -> KVCache {
         let copy = KVCache()
         copy.keys = keys
         copy.values = values

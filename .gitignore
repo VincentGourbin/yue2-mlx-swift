@@ -12,3 +12,6 @@ outputs/
 .pi/npm/
 __pycache__/
 *.pyc
+Apps/**/xcuserdata/
+Apps/YuE2Mobile/Signing.xcconfig
+.local-runs/signing.yml

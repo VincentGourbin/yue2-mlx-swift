@@ -5,37 +5,60 @@ import Foundation
 import MLX
 import MLXNN
 
-/// Decoder-only port of `YuE2VAE` (`decoder_only=True` in the reference): fp32 throughout,
+/// The reference decoder is fp32-only (README: "Keep the VAE in FP32"); `fp16` is an E1
+/// (`plan/13-ios-backend.md` §13.5) experiment — a Neural Engine backend needs fp16 weights,
+/// so this measures whether the quality loss is acceptable before committing to that path.
+public enum VAEPrecision {
+    case fp32
+    case fp16
+
+    var dtype: DType { self == .fp32 ? .float32 : .float16 }
+}
+
+/// Decoder-only port of `YuE2VAE` (`decoder_only=True` in the reference): fp32 by default,
 /// no clipping (the pipeline clamps to `[-1, 1]` only at WAV export — piège n°11).
 public final class YuE2VAE: Module {
     public let config: VAEConfig
+    public let precision: VAEPrecision
     @ModuleInfo(key: "decoder") var decoder: OobleckDecoder
 
-    public init(config: VAEConfig) {
+    public init(config: VAEConfig, precision: VAEPrecision = .fp32) {
         self.config = config
+        self.precision = precision
         _decoder.wrappedValue = OobleckDecoder(config: config.decoderConfig)
         super.init()
     }
 
-    /// Loads `directory/config.json` and `directory/model.safetensors`.
-    public static func load(directory: URL) throws -> YuE2VAE {
+    /// Loads `directory/config.json` and `directory/model.safetensors`, casting every weight to
+    /// `precision` tensor by tensor (piège n°8 — never `eval()` the whole parameter tree at once).
+    public static func load(directory: URL, precision: VAEPrecision = .fp32) throws -> YuE2VAE {
         let config = try VAEConfig.load(from: directory.appendingPathComponent("config.json"))
-        let model = YuE2VAE(config: config)
+        let model = YuE2VAE(config: config, precision: precision)
         let weights = try VAEWeightLoader.loadDecoderWeights(directory: directory)
         try WeightLoader.apply(weights, to: model, component: "vae")
+        if precision == .fp16 {
+            var casted = [String: MLXArray]()
+            casted.reserveCapacity(weights.count)
+            for (key, value) in model.parameters().flattened() {
+                let c = value.asType(.float16)
+                eval(c)
+                casted[key] = c
+            }
+            model.update(parameters: ModuleParameters.unflattened(casted))
+        }
         return model
     }
 
-    /// `z`: `[1, T, latentDim]` (NLC — the NAR's own output layout, no transpose needed).
-    /// Returns `[1, naturalOutputLength(frames: T), outChannels]`, fp32, unclipped.
+    /// `z`: `[1, T, latentDim]` (NLC — the NAR's own output layout, no transpose needed), any
+    /// float dtype (cast to `precision` here). Returns `[1, naturalOutputLength(frames: T),
+    /// outChannels]`, fp32, unclipped.
     public func decode(_ z: MLXArray) -> MLXArray {
         precondition(
             z.ndim == 3 && z.dim(0) == 1 && z.dim(1) >= 1 && z.dim(2) == config.decoderConfig.latentDim,
             "expected nonempty [1, T, \(config.decoderConfig.latentDim)] latents, got \(z.shape)"
         )
-        precondition(z.dtype == .float32, "VAE latents must be float32")
         precondition(MLX.all(MLX.isFinite(z)).item(Bool.self), "VAE latents contain non-finite values")
-        return decoder(z)
+        return decoder(z.asType(precision.dtype)).asType(.float32)
     }
 
     /// `1920 * T - 64` for the released topology (kernel/stride/padding fixed by config;

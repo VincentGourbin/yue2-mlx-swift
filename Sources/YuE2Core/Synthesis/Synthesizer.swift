@@ -20,12 +20,18 @@ public struct Synthesizer {
     /// `prefix + codec`) is topped up to `chunk.arTokens` and reused as the NAR's AR-prefix cache
     /// instead of prefilling it a second time (O2/T-4.2, plan §7). `onProgress` reports
     /// `chunkIndex · steps + completedStepsInChunk` out of `steps · chunkCount`, matching the
-    /// reference's global step counter.
+    /// reference's global step counter. `onBeforeChunk(needsARPath:)` fires once per chunk,
+    /// after its AR-prefix cache is settled and before its solve starts: `needsARPath == false`
+    /// means the AR branch's weights are never read again in this solve (single chunk, reused
+    /// cache) — the point where stage-scoped residency drops them (`ModelSession.releaseWeights
+    /// (of: .ar)`) and brings the NAR branch in; `true` means `CachedNAR` will prefill the prefix
+    /// itself, so both branches must be resident.
     public func synthesize(
         prefix: [Int], codec: [Int], seed: UInt64,
         steps: Int? = nil, context: Int? = nil,
         reuseCache: KVCache? = nil, guidance: Double = 1, noise: MLXArray? = nil,
         onProgress: ((Int, Int) -> Void)? = nil,
+        onBeforeChunk: ((_ needsARPath: Bool) -> Void)? = nil,
         cancel: (() -> Bool)? = nil
     ) throws -> MLXArray {
         YuE2MemoryManager.configure(for: .nar)
@@ -45,6 +51,9 @@ public struct Synthesizer {
                 (chunks.count == 1 && guidance == 1)
                 ? reuseCache.map { Self.topUp(cache: $0, to: chunk.arTokens, model: model) }
                 : nil
+            // A chunk without a ready cache prefills inside `CachedNAR`: the AR weights must
+            // stay resident for it. Only the reuse path above frees the caller from that.
+            onBeforeChunk?(cacheForChunk == nil)
             let engine = CachedNAR(model: model, chunk: chunk, cache: cacheForChunk)
             let chunkProgress = onProgress.map { report in
                 { (completed: Int, total: Int) in report(chunkIndex * total + completed, totalSteps) }

@@ -24,13 +24,21 @@ final class TimeEmbedder: Module {
     }
 }
 
-/// Non-learnable sinusoidal position table for NAR audio latent frames, loaded verbatim from
-/// the checkpoint (never recomputed — plan §2.2/§9 pitfall #3).
+/// Non-learnable sinusoidal position table for NAR audio latent frames.
+///
+/// On macOS this is loaded verbatim from the checkpoint (plan §2.2/§9 pitfall #3 — never
+/// *recomputed* to replace the loaded table's values, since a mismatch there would be silent
+/// and wrong). The iPhone pack (T-6.2, E2) can't afford the ~100 MB `[maxFrames, hiddenSize]`
+/// buffer, so `pe` is optional: when absent, `YuE2ForCausalLM.latentPositions(count:)` computes
+/// the exact same values on demand for just the positions actually needed
+/// (`NARModules.computeLatentPositions`) — the checkpoint's own formula, not an approximation.
 final class LatentPosEmbed: Module {
-    @ParameterInfo(key: "pe") var pe: MLXArray
+    @ParameterInfo(key: "pe") var pe: MLXArray?
 
-    init(maxFrames: Int, hiddenSize: Int) {
-        _pe = ParameterInfo(wrappedValue: MLXArray.zeros([maxFrames, hiddenSize]), key: "pe")
+    /// `computed: true` skips the `[maxFrames, hiddenSize]` allocation entirely (`pe = nil`,
+    /// never loaded, never expected by `WeightLoader.apply`'s coverage check).
+    init(maxFrames: Int, hiddenSize: Int, computed: Bool = false) {
+        _pe = ParameterInfo(wrappedValue: computed ? nil : MLXArray.zeros([maxFrames, hiddenSize]), key: "pe")
         super.init()
     }
 }
@@ -49,14 +57,18 @@ public final class YuE2ForCausalLM: Module {
     @ModuleInfo(key: "time_embedder") var timeEmbedder: TimeEmbedder
     @ModuleInfo(key: "latent_pos_embed") var latentPosEmbed: LatentPosEmbed
 
-    init(config: YuE2Config) {
+    /// `computePE`: build `latent_pos_embed` without its `[maxFrames, hiddenSize]` buffer (T-6.2,
+    /// E2) — `latentPositions(count:)` recomputes those rows instead of gathering from it.
+    init(config: YuE2Config, computePE: Bool = false) {
         self.config = config
         _model = ModuleInfo(wrappedValue: Backbone(config: config), key: "model")
         _lmHead = ModuleInfo(wrappedValue: Linear(config.hiddenSize, config.vocabSize, bias: false), key: "lm_head")
         _vae2llm = ModuleInfo(wrappedValue: Linear(config.latentDim, config.hiddenSize, bias: true), key: "vae2llm")
         _llm2vae = ModuleInfo(wrappedValue: Linear(config.hiddenSize, config.latentDim, bias: true), key: "llm2vae")
         _timeEmbedder = ModuleInfo(wrappedValue: TimeEmbedder(hiddenSize: config.hiddenSize), key: "time_embedder")
-        _latentPosEmbed = ModuleInfo(wrappedValue: LatentPosEmbed(maxFrames: config.maxLatentFrames, hiddenSize: config.hiddenSize), key: "latent_pos_embed")
+        _latentPosEmbed = ModuleInfo(
+            wrappedValue: LatentPosEmbed(maxFrames: config.maxLatentFrames, hiddenSize: config.hiddenSize, computed: computePE),
+            key: "latent_pos_embed")
         super.init()
     }
 

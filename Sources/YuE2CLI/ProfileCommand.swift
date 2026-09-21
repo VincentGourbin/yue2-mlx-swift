@@ -52,7 +52,8 @@ struct ProfilePlanCommand: AsyncParsableCommand {
         YuE2MemoryManager.configure(for: .ar)
         session.beginPhase("1. Model Loading", category: .modelLoad)
         let modelSession = try await ModelSession.load(
-            modelsDir: modelsDir, quant: modelOptions.quant, quantizeHead: modelOptions.quantHead)
+            modelsDir: modelsDir, quant: modelOptions.quant, quantizeHead: modelOptions.quantHead,
+            precision: modelOptions.precision)
         session.endPhase("1. Model Loading", category: .modelLoad)
 
         let abcSampling = try samplingOverrides.abcSampling(default: modelSession.config.abc)
@@ -101,7 +102,8 @@ struct ProfileSemanticCommand: AsyncParsableCommand {
         YuE2MemoryManager.configure(for: .ar)
         session.beginPhase("1. Model Loading", category: .modelLoad)
         let modelSession = try await ModelSession.load(
-            modelsDir: modelsDir, quant: modelOptions.quant, quantizeHead: modelOptions.quantHead)
+            modelsDir: modelsDir, quant: modelOptions.quant, quantizeHead: modelOptions.quantHead,
+            precision: modelOptions.precision)
         session.endPhase("1. Model Loading", category: .modelLoad)
 
         let semanticSampling = try samplingOverrides.semanticSampling(default: modelSession.config.semantic)

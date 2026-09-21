@@ -51,7 +51,7 @@ struct GenerationSmokeTests {
         let config = try GenerationConfig(odeSteps: 4)
 
         let pipeline = YuE2Pipeline(session: session, vae: vae, config: config)
-        let result = try pipeline.generate(
+        let result = try await pipeline.generate(
             request: Self.songRequest, abcSampling: abcSampling, semanticSampling: semanticSampling)
 
         let outDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

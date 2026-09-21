@@ -24,7 +24,8 @@ struct PlanCommand: AsyncParsableCommand {
 
         YuE2MemoryManager.configure(for: .ar)
         let session = try await ModelSession.load(
-            modelsDir: modelsDir, quant: modelOptions.quant, quantizeHead: modelOptions.quantHead)
+            modelsDir: modelsDir, quant: modelOptions.quant, quantizeHead: modelOptions.quantHead,
+            precision: modelOptions.precision)
         let abcSampling = try samplingOverrides.abcSampling(default: session.config.abc)
 
         let planner = Planner(model: session.model, tokenizer: session.tokenizer, config: session.config)

@@ -44,3 +44,17 @@
 | T-4.7 | O10 : GUI de bench ⛔ G-8 | T-4.6 | validée (GATE G-8 posée) |
 | T-5.1 | Encodeur VAE Oobleck + parité (hors plan initial, choix de Vincent après G-8) | T-4.7 | validée |
 | T-5.2 | Ingestion audio + `yue2 encode` + round-trip réel | T-5.1 | validée |
+| T-6.0 | `YuE2Core` compile pour iOS | T-5.2 | validée |
+| T-6.1 | E1 : décodeur VAE fp16 (MLX), SNR + écoute | T-6.0 | validée (écoute en attente) |
+| T-6.2 | E2 : preset `int4-all`, `pe` recalculé, fp16, pack complet | T-6.1 | validée (`int4-mixed` — budget de quantification, écoute finale en attente) |
+| T-6.3 | E3 : VAE Core AI (GPU et Neural Engine), `VAEDecoding` | T-6.1 | validée — **rouverte pour le GPU le 2026-09-21** : 54,7 dB tuilé après correction du fenêtrage (`planVAETiles`), `PARITY OK` ; option C de fait (GPU valide, ANE impasse) |
+| T-6.4 | E4 : pile NAR complète en Core AI, GPU vs ANE | T-6.2, T-6.3 | validée (GPU vert, ANE crash — verdict Mac consigné, décision attend G-9) |
+| T-6.5 | E5 : projet Xcode (manuel) + bench sur l'iPhone ⛔ G-9 | T-6.4 | à faire |
+| T-6.6 | `YuE2Runtime` + profil mémoire/thermique iOS | T-6.5 | à faire |
+| T-6.7 | Pipeline reprenable dans l'app | T-6.6 | à faire |
+| T-6.8 | Téléchargement du pack int4 + licence ⛔ G-11 | T-6.7 | à faire |
+| T-6.9 | Intégration VAE Core AI dans l'app (si E3 go) | T-6.8 | à faire |
+| T-6.10 | Intégration pile NAR Core AI (si E4 go) | T-6.9 | **fermée** (T-6.4b : Core AI GPU 5-8× plus lent que MLX, > seuil 2× de Vincent) — 2026-09-21 : ≈ 0,9 Go de moins que MLX sur l'étape NAR, à garder comme scénario « mémoire contrainte » si G-9 l'exige |
+| T-6.11 | Première chanson sur l'iPhone + BENCHMARKS iOS ⛔ G-10 | T-6.9 | à faire |
+| T-6.12 | Réglages appareil (ODE, tuile, KV, thermique) | T-6.11 | à faire |
+| T-6.13 | E6 : décodage AR à états en Core AI (optionnel, décidé à G-9) | G-9 | à faire |

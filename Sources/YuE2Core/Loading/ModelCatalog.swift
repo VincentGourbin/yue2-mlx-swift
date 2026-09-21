@@ -56,6 +56,25 @@ public enum YuE2Model: String, CaseIterable, Sendable {
     public var directoryName: String { rawValue }
 }
 
+/// Where checkpoints live when nothing overrides it. macOS reads `$YUE2_MODELS_DIR` (a sandboxed
+/// iOS app has no shell environment to read a path from, so it always gets the app container's
+/// own `Caches/models` — never a shared/system location).
+public enum YuE2ModelsDirectory {
+    public static func resolveDefault() -> URL? {
+        #if os(iOS)
+        guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        return caches.appendingPathComponent("models")
+        #else
+        guard let env = ProcessInfo.processInfo.environment["YUE2_MODELS_DIR"], !env.isEmpty else {
+            return nil
+        }
+        return URL(fileURLWithPath: env)
+        #endif
+    }
+}
+
 /// The real byte-pair tokenizer (`tokenizer.json`) is not published by `m-a-p/YuE2-3B`;
 /// it is Qwen2.5's, fetched separately and converted in T-1.5.
 public enum YuE2TokenizerSource {

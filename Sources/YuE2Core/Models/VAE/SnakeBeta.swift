@@ -36,7 +36,13 @@ final class SnakeBeta: Module, UnaryLayer {
         return x + (1.0 / (b + eps)) * (s * s)
     }
 
+    /// Debug-only finiteness check on the realized output — deliberately outside `activation`
+    /// (never inside the `compile`d trace: forcing an eager `.item()` mid-trace would corrupt it).
     func callAsFunction(_ x: MLXArray) -> MLXArray {
-        YuE2Compile.disabled ? activation(x) : compiledActivation(x)
+        let y = YuE2Compile.disabled ? activation(x) : compiledActivation(x)
+        if YuE2Debug.enabled {
+            precondition(MLX.all(MLX.isFinite(y)).item(Bool.self), "SnakeBeta produced non-finite values")
+        }
+        return y
     }
 }

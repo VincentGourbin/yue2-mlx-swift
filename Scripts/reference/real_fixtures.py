@@ -162,6 +162,10 @@ def nar(models_dir: Path) -> None:
                 out[f"nar_after_layer_{i}"] = x.float().cpu().clone()
 
         out["solve4_expected"] = engine.solve(steps=4)
+        # T-6.2 (E2 sensitivity sweep): the production step count is 32, not 4 -- solve4 was a
+        # fast parity smoke test. A quantized NAR's error compounds over all 64 velocity() calls
+        # (32 steps x 2 midpoint evals), so judging a quantization preset needs the full trajectory.
+        out["solve32_expected"] = engine.solve(steps=32)
         engine.close()
 
     parity_dir = models_dir / "parity"

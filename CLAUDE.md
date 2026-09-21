@@ -20,3 +20,6 @@ See PLAN.md §2.1–§2.8: token ids, prompt format, MoT dual paths, RoPE non-in
 GPU clock state moves results up to 10×: cool down before every point, A/B/B/A, control sample, judge against ±2 % spread. Profiler (`swift-mlx-profiler`) first, `print` never. Record durable findings in docs/knowledge/log.md.
 ## Engineering Knowledge Base
 docs/knowledge/ is an OKF bundle (index.md, log.md, pitfalls/, benchmarks/, decisions/).
+
+## iOS backend (Jalon 6)
+`plan/13-ios-backend.md` (rev. 2) is the spec: MLX int4 for the AR path and orchestration, **Core AI** (iOS 27, `coreai-torch`, `xcrun coreai-build`) for the VAE and the whole NAR stack, GPU vs Neural Engine chosen by measurement, always with an MLX fallback. Never let a Core AI VAE asset specialize on CPU (open conv-transpose defect). Experiments E1–E5 run on the Mac first; device measurements gate everything (G-9). The iOS app lives in `Apps/YuE2Mobile` (Xcode project created by hand, §13.9; `Signing.xcconfig` gitignored).
