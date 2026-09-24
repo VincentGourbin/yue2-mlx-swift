@@ -462,3 +462,12 @@ Gabarit : voir AGENTS.md §6. Les lignes de validation sont recopiées telles qu
 - Bugs réels rencontrés : (a) `FootprintSampler.start()` ré-entrait un `NSLock` non récursif (blocage à froid, trouvé au `sample`) — corrigé ; (b) partial application `residency.retains(key:)` fait échouer le type-checker Swift 6.2 (« failed to produce diagnostic ») — remplacé par une fermeture explicite ; (c) `GenerationSmokeTests` à mettre en `await` après le passage de `generate` en `async`.
 - Limites : temps mesurés avec un serveur LLM tiers actif sur la machine (chiffres « en session », pas `BENCHMARKS.md`) ; plancher MLX du VAE (≈ 1 Go même à 32 frames) non expliqué ; `L_BUCKETS` Core AI NAR plafonne à 1 536 frames ; rien n'a encore tourné sur l'iPhone (T-6.5/G-9 inchangées) ; pas de commit (à la main de Vincent).
 
+
+## T-6.14 — Head restreint quantifié (Q6) — 2026-09-23 — validée (session pilote, pas l'agent local)
+- Fait : `RestrictedHead` garde les lignes packées d'un `QuantizedLinear` (`weight`/`scales`/`biases` pris par `MLX.take`) et calcule les logits par `quantizedMatmul(transpose: true)`, comme `QuantizedLinear.callAsFunction` ; plus aucune dé-quantification fp16 des ≈ 151 k lignes de la phase ABC.
+- Mesure (`yue2 plan --quant int4-mixed --quant-head --precision fp16 --abc-max-tokens 128`, profil mobile, `/usr/bin/time -l`) : pic process **3 734 → 3 451 Mo (−283 Mo)** ; débit ABC **57,7 → 131,0 tok/s** (le head fp16 de 620 Mo relu à chaque token était le goulot mémoire de la phase plan) ; `score.abc` identique avant/après.
+- Validation : `Scripts/check-build.sh` → `BUILD OK` ; `Scripts/check-tests.sh QuantizationTests` → `TESTS OK (8 tests)` (`quantHeadRestrictedHeadClosesToBF16` : greedy **8/8**) ; `Scripts/check-tests.sh RealLMParityTests` → `TESTS OK (5 tests)`.
+- Limites : le gain de pic est inférieur aux 620 Mo théoriques (les copies transitoires du `take` et les activations restent) ; la mesure iPhone reste à refaire (app A-x, prochaine installation) ; pas de mesure A/B/B/A du débit (chiffre « en session »).
+
+## Avertissements Xcode nettoyés — 2026-09-23 (session pilote)
+- Signalés par Vincent depuis l'app iOS : `LogitsProcessor` (deux `var` → `let`), `ModelDownloader` (`_ = try?`), `NDArrayBridge` (`try` sans appel jetant), `SnakeBeta` (`nonisolated(unsafe)` superflu sur un `Bool`), `RestrictedHead` (`quantizedMatmul` renommé `quantizedMM` dans mlx-swift, même signature). `BUILD OK`, binaire `yue2` reconstruit sans ces avertissements, `QuantizationTests` 8/8 (head quantifié greedy 8/8).

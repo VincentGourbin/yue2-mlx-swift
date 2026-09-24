@@ -89,7 +89,7 @@ public final class LogitsProcessor {
         let alpha = MLX.pow(MLXArray(Float(penalty)), counts).asType(scores.dtype)
         let values = takeAlong(scores, ids.expandedDimensions(axis: 0), axis: -1)
         let updated = MLX.where(values .< 0, values * alpha, values / alpha)
-        var result = scores
+        let result = scores
         result[0..., ids] = updated
         return result
     }
@@ -100,7 +100,7 @@ public final class LogitsProcessor {
         let order = argSort(-scores, axis: -1)
         let sortedValues = takeAlong(scores, order, axis: -1)
         let probabilities = softmax(sortedValues, axis: -1)
-        var removed = (probabilities.cumsum(axis: -1) - probabilities) .> threshold
+        let removed = (probabilities.cumsum(axis: -1) - probabilities) .> threshold
         removed[0..., 0..<keepFirst] = MLXArray(false)
         let masked = MLX.where(removed, MLXArray(-Float.infinity).asType(scores.dtype), sortedValues)
         return takeAlong(masked, argSort(order, axis: -1), axis: -1)

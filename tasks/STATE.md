@@ -6,3 +6,5 @@ non bloquant : écoute du round-trip T-5.2 et de la paire bf16/qint8 T-4.5
 dernière mise à jour : 2026-09-20 (plan rév. 1 + Jalon 5 + Jalon 6)
 
 Rappel : une seule fiche `en cours` à la fois ; format d'une ligne : `fiche T-x.y · en cours|validée|bloquée · AAAA-MM-JJ`.
+
+2026-09-23 (session pilote) : T-6.14 validée — head restreint quantifié (Q6), −283 Mo de pic et ABC 2,3× plus rapide sur le Mac ; T-6.13 sans objet (G-9). Réponse de Vincent à G-9 toujours attendue.

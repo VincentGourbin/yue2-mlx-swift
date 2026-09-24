@@ -61,7 +61,7 @@ enum NDArrayBridge {
         let shape = ndArray.shape
         let count = shape.reduce(1, *)
         let view = ndArray.view(as: Float16.self)
-        let fp16: MLXArray = try view.withUnsafePointer { pointer, _, _ in
+        let fp16: MLXArray = view.withUnsafePointer { pointer, _, _ in
             MLXArray(UnsafeBufferPointer(start: pointer, count: count), shape)
         }
         return fp16.asType(.float32)

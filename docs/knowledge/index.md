@@ -8,7 +8,8 @@ Journal d'ingénierie du portage (bundle OKF). `log.md` porte l'historique horod
 les sous-répertoires accumulent les conclusions durables.
 
 ## Benchmarks
-Mesures reproductibles (état des horloges GPU, écart ±2 %). Rien pour l'instant.
+Mesures reproductibles (état des horloges GPU, écart ±2 %).
+- [iPhone 15 Pro Max, premier balayage (E5)](benchmarks/iphone-15-pro-max-2026-09-22.md) — AR 25 tok/s, NAR 2,6 ms/frame/éval à froid puis ×1,6 dès que `thermalState` passe à fair (≈ 60 s de charge), VAE 6 s / 41 s d'audio ; clip de 30 s réel en 273 s, pic 3,6 Go.
 
 ## Decisions
 Choix d'architecture motivés (pourquoi telle voie, tel dtype, tel cache).

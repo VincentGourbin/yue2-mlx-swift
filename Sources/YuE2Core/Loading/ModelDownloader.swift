@@ -151,7 +151,7 @@ private final class ChunkedDownloadDelegate: NSObject, URLSessionDataDelegate, @
             FileManager.default.createFile(atPath: partURL.path, contents: nil)
         }
         handle = try? FileHandle(forWritingTo: partURL)
-        if resumed { try? handle?.seekToEnd() }
+        if resumed { _ = try? handle?.seekToEnd() }
         completionHandler(.allow)
     }
 

@@ -8,7 +8,7 @@ import MLXNN
 /// Kill-switch for `compile(shapeless:)` in the VAE decoder (O7/T-4.4), mirroring
 /// `Flux2FusedKernels.disabled`'s environment-variable pattern for A/B comparison.
 enum YuE2Compile {
-    nonisolated(unsafe) static let disabled = ProcessInfo.processInfo.environment["YUE2_DISABLE_COMPILE"] != nil
+    static let disabled = ProcessInfo.processInfo.environment["YUE2_DISABLE_COMPILE"] != nil
 }
 
 /// `y = x + (1 / (exp(beta) + eps)) * sin(exp(alpha) * x)^2`, alpha/beta stored in log scale,

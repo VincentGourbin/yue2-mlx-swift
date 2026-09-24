@@ -57,4 +57,5 @@
 | T-6.10 | Intégration pile NAR Core AI (si E4 go) | T-6.9 | **fermée** (T-6.4b : Core AI GPU 5-8× plus lent que MLX, > seuil 2× de Vincent) — 2026-09-21 : ≈ 0,9 Go de moins que MLX sur l'étape NAR, à garder comme scénario « mémoire contrainte » si G-9 l'exige |
 | T-6.11 | Première chanson sur l'iPhone + BENCHMARKS iOS ⛔ G-10 | T-6.9 | à faire |
 | T-6.12 | Réglages appareil (ODE, tuile, KV, thermique) | T-6.11 | à faire |
-| T-6.13 | E6 : décodage AR à états en Core AI (optionnel, décidé à G-9) | G-9 | à faire |
+| T-6.13 | E6 : décodage AR à états en Core AI (optionnel, décidé à G-9) | G-9 | sans objet (G-9 : l'AR pèse 17 % du temps) |
+| T-6.14 | Head restreint quantifié (Q6) : lignes packées + `quantizedMatmul`, −283 Mo de pic et ABC 2,3× plus rapide | T-6.5 | validée 2026-09-23 (session pilote) |
