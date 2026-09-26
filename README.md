@@ -10,7 +10,7 @@ Port Swift / MLX de **YuE2** (m-a-p, septembre 2026) pour Apple Silicon : parole
 2. **Réutiliser les briques déjà validées** dans les autres ports MLX Swift de l'auteur (attention Qwen3, chargeur safetensors strict, décodeur audio DAC/Oobleck, export WAV, profiler, GUI de bench) plutôt que de réécrire.
 3. **Servir de banc d'essai pour l'exécution d'un plan par des agents de code** : le port a été réalisé par des agents à partir de fiches de tâches (`tasks/`), chacune avec ses lectures, ses validations en ligne de commande et son entrée de journal. Le plan lui-même est dans `plan/`.
 
-## Où on en est (20 septembre 2026)
+## Où on en est (26 septembre 2026 — version 0.2.1)
 
 | Jalon | Contenu | État |
 |---|---|---|
@@ -19,6 +19,7 @@ Port Swift / MLX de **YuE2** (m-a-p, septembre 2026) pour Apple Silicon : parole
 | 3 | Voie NAR : flow matching sur le cache KV du préfixe, solveur midpoint 32 pas, `yue2 generate` bout en bout | ✅ validé, première chanson écoutée le 18 septembre |
 | 4 | Optimisations mesurées A/B/B/A : réutilisation du cache KV pour le NAR, activation SnakeBeta compilée (VAE −30 %), quantification 8 bits de la voie AR (AR −30 %, opt-in `--quant qint8`), GUI de bench SwiftUI | ✅ validé ; deux optimisations tentées puis retirées faute de gain |
 | 5 | Encodeur VAE (audio → latents), `yue2 encode`, round-trip audio réel | ✅ code et parité validés ; **écoute du round-trip encore en attente** |
+| 6 | Backend iPhone : pack `int4-mixed-head` (2,5 Go), résidence des poids par étape, head restreint quantifié, tuile VAE 256 fp16, VAE Core AI GPU en option, porte GPU + checkpoint par pas du NAR (reprise bit-exacte), profil mémoire mobile | ✅ mesuré sur iPhone 15 Pro Max : chanson de 30 s en 273 s, 60 s en ≈ 12,7 min, pic 3,2-3,6 Go ; première écoute validée (G-10) |
 | — | `yue2 remix-experimental` : réécriture SDEdit d'un latent réel sous un nouveau conditionnement | ⚠️ expérimental, hors plan, non validé |
 
 Ce qui a été volontairement laissé de côté : MERT2 et SheetSage2 (transcription pour les covers, inutiles pour générer depuis du texte), le mode `cot: off` (supporté, jamais mesuré), la reproduction bit-à-bit du générateur aléatoire PyTorch (le bruit initial est tiré côté Swift ; la parité se fait avec un bruit injecté).
@@ -26,7 +27,7 @@ Ce qui a été volontairement laissé de côté : MERT2 et SheetSage2 (transcrip
 ## Ce qu'il reste à faire
 
 - **Écoutes humaines en suspens** : le round-trip encodeur → décodeur sur un fichier réel (`tasks/ASK.md`, T-5.2) et la comparaison bf16 / `qint8` sur une chanson complète (T-4.5). Les parités numériques sont vertes, mais le juge final est l'oreille.
-- **Backend iPhone** : faire tourner le pipeline sur iOS 27 avec les poids en 4 bits et le VAE et la voie NAR en Core AI (GPU ou Neural Engine, choisi par mesure). Plan détaillé : `plan/13-ios-backend.md`, fiches `tasks/T-6.*`.
+- **Backend iPhone, suite** : le pipeline tourne sur iOS 27 (app séparée `yue2-ios`, moteur épinglé en version exacte). Restent le throttling thermique de l'A17 Pro (pacing dans l'app), le fork minimal de mlx-core pour rendre rattrapable la perte du GPU en arrière-plan (question Q7), le palier NAR Core AI 2 048 et le Neural Engine (impasse avec `coreai-torch 0.4.2`). Plan : `plan/13-ios-backend.md`, fiches `tasks/T-6.*`, mesures `docs/knowledge/benchmarks/`.
 - **Mesures manquantes** : mode `cot: off` (deux branches CFG), chansons longues (3 à 6 min, plusieurs chunks NAR), `int4` sur la voie AR.
 - **Hors périmètre pour l'instant** : serveur d'inférence, covers audio complètes (transcription), quantification de la voie NAR.
 

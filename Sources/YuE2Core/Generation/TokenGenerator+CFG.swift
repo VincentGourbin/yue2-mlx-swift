@@ -40,6 +40,7 @@ extension TokenGenerator {
         var lastHidden = MLXArray.zeros([1, 1, 1])
         var index = 0
         while index < tokens.count {
+            YuE2GPUGate.shared.wait()
             let end = min(index + stepSize, tokens.count)
             let block = MLXArray(tokens[index..<end].map { Int32($0) }).reshaped([1, end - index])
             let hidden = model.model.forwardAR(tokens: block, cache: cache)
@@ -131,7 +132,7 @@ extension TokenGenerator {
 
         profiler.startGeneration()
         for step in 0..<sampling.maxTokens {
-            if cancel?() == true {
+            if cancel?() == true || !YuE2GPUGate.shared.wait(cancel: cancel) {
                 throw YuE2Error.cancelled
             }
             let scores = processor.scores(logits: currentLogits, step: step)

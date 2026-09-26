@@ -20,7 +20,11 @@ public struct Synthesizer {
     /// `prefix + codec`) is topped up to `chunk.arTokens` and reused as the NAR's AR-prefix cache
     /// instead of prefilling it a second time (O2/T-4.2, plan §7). `onProgress` reports
     /// `chunkIndex · steps + completedStepsInChunk` out of `steps · chunkCount`, matching the
-    /// reference's global step counter. `onBeforeChunk(needsARPath:)` fires once per chunk,
+    /// reference's global step counter. `resume`/`onStep` (`NARCheckpoint`): `onStep` fires after
+    /// every completed ODE step with the live state (192 KB at 1 500 frames — persist it, never
+    /// accumulate it); `resume` restarts the same schedule from a saved step, bit-for-bit the
+    /// trajectory an uninterrupted solve would have taken, so a lost step costs one step, not the
+    /// stage. `onBeforeChunk(needsARPath:)` fires once per chunk,
     /// after its AR-prefix cache is settled and before its solve starts: `needsARPath == false`
     /// means the AR branch's weights are never read again in this solve (single chunk, reused
     /// cache) — the point where stage-scoped residency drops them (`ModelSession.releaseWeights
@@ -32,6 +36,8 @@ public struct Synthesizer {
         reuseCache: KVCache? = nil, guidance: Double = 1, noise: MLXArray? = nil,
         onProgress: ((Int, Int) -> Void)? = nil,
         onBeforeChunk: ((_ needsARPath: Bool) -> Void)? = nil,
+        resume: NARCheckpoint? = nil,
+        onStep: ((NARCheckpoint) -> Void)? = nil,
         cancel: (() -> Bool)? = nil
     ) throws -> MLXArray {
         YuE2MemoryManager.configure(for: .nar)
@@ -41,6 +47,19 @@ public struct Synthesizer {
             prefix: prefix, codec: codec, seed: seed, context: resolvedContext, noise: noise
         )
         let totalSteps = resolvedSteps * chunks.count
+        if let resume {
+            // Single-chunk songs only (every iPhone-length song): a multi-chunk resume would also
+            // need the earlier chunks' latents, which this API does not carry.
+            guard chunks.count == 1, resume.chunkIndex == 0 else {
+                throw YuE2Error.invalidRequest("NAR resume is only supported for single-chunk songs (got \(chunks.count) chunks, checkpoint chunk \(resume.chunkIndex))")
+            }
+            guard resume.steps == resolvedSteps, (0..<resolvedSteps).contains(resume.step) else {
+                throw YuE2Error.invalidRequest("NAR checkpoint (step \(resume.step)/\(resume.steps)) does not match this solve (\(resolvedSteps) steps)")
+            }
+            guard resume.state.shape == chunks[0].noise.shape else {
+                throw YuE2Error.invalidRequest("NAR checkpoint state \(resume.state.shape) does not match this song's latents \(chunks[0].noise.shape)")
+            }
+        }
 
         var outputs: [MLXArray] = []
         for (chunkIndex, chunk) in chunks.enumerated() {
@@ -58,7 +77,15 @@ public struct Synthesizer {
             let chunkProgress = onProgress.map { report in
                 { (completed: Int, total: Int) in report(chunkIndex * total + completed, totalSteps) }
             }
-            outputs.append(try engine.solve(steps: resolvedSteps, onProgress: chunkProgress, cancel: cancel))
+            let stepCallback: ((Int, MLXArray) -> Void)? = onStep.map { report in
+                { completed, state in
+                    report(NARCheckpoint(chunkIndex: chunkIndex, step: completed, steps: resolvedSteps, state: state))
+                }
+            }
+            outputs.append(try engine.solve(
+                steps: resolvedSteps,
+                initialState: resume?.state, startStep: resume?.step ?? 0,
+                onProgress: chunkProgress, cancel: cancel, onStep: stepCallback))
             YuE2MemoryManager.releaseBetweenStages()
         }
         return concatenated(outputs, axis: 0)

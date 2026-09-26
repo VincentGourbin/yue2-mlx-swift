@@ -29,6 +29,7 @@ public enum TokenGenerator {
         var lastLogits = MLXArray.zeros([1, 1, 1])
         var index = 0
         while index < tokens.count {
+            YuE2GPUGate.shared.wait()
             let end = min(index + stepSize, tokens.count)
             let block = MLXArray(tokens[index..<end].map { Int32($0) }).reshaped([1, end - index])
             let logits = model.forwardAR(tokens: block, cache: cache, keepLast: keepLastOnly)

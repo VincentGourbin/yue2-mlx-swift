@@ -109,6 +109,7 @@ public func decodeTiled(
 
     var crops: [MLXArray] = []
     for (index, window) in windows.enumerated() {
+        YuE2GPUGate.shared.wait()
         let tile = try await backend.decode(z[0..., window.windowStart..<window.windowEnd, 0...])
         let outStart = window.coreStart * ratio
         let outEnd = min(window.coreEnd * ratio, total)

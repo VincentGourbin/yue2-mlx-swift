@@ -471,3 +471,10 @@ Gabarit : voir AGENTS.md §6. Les lignes de validation sont recopiées telles qu
 
 ## Avertissements Xcode nettoyés — 2026-09-23 (session pilote)
 - Signalés par Vincent depuis l'app iOS : `LogitsProcessor` (deux `var` → `let`), `ModelDownloader` (`_ = try?`), `NDArrayBridge` (`try` sans appel jetant), `SnakeBeta` (`nonisolated(unsafe)` superflu sur un `Bool`), `RestrictedHead` (`quantizedMatmul` renommé `quantizedMM` dans mlx-swift, même signature). `BUILD OK`, binaire `yue2` reconstruit sans ces avertissements, `QuantizationTests` 8/8 (head quantifié greedy 8/8).
+
+## Hors fiche — Q7, GPU retiré en arrière-plan (2026-09-26)
+- Demande de Vincent : évaluer la recommandation de l'équipe GUI (fork minimal de mlx-swift) ; consigne : « ne surtout pas exploser la conso mémoire », puis enchaîner sur les points 1 et 2.
+- Fait : `Sources/YuE2Core/Memory/GPUGate.swift` (`YuE2GPUGate`, `YuE2ExecutionPolicy.evalPerLayer`), `Synthesis/NARCheckpoint.swift`, `CachedNAR.solve(onStep:)` + eval/porte par couche dans `velocity`, `Synthesizer.synthesize(resume:onStep:)`, `YuE2Pipeline.generate(narResume:onNARStep:)`, portes dans `TokenGenerator` (préfixe, échantillonnage) et les deux `decodeTiled`, `yue2 synthesize --checkpoint-dir/--resume`, tests `GPUGateAndCheckpointTests` (5). Réponse Q7 dans `tasks/ASK.md`, mesure dans `docs/knowledge/log.md`.
+- Mémoire : rien de retenu par le moteur (état passé vivant au callback ; 384 Ko transitoires à l'écriture fp32) ; eval par couche +40-60 Mo de pic à 1 024 frames, hors du pic de la chanson.
+- Limites : temps mesurés sous un entraînement LoRA tiers (inexploitables, notés comme tels) ; reprise limitée aux chansons mono-chunk ; fork mlx-core non réalisé (recommandé après, à proposer en amont) ; pas de commit (à la main de Vincent, 0.2.1 proposée).
+

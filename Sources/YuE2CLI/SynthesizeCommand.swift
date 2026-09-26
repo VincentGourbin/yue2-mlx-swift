@@ -33,6 +33,12 @@ struct SynthesizeCommand: AsyncParsableCommand {
     @Option(name: .long, help: "Output directory for the song's artifacts.")
     var out: String
 
+    @Option(name: .long, help: "Directory for the per-step NAR checkpoint (nar-checkpoint.json + nar-state.npy), written after every ODE step and cleared on success.")
+    var checkpointDir: String?
+
+    @Flag(name: .long, help: "Resume the NAR solve from the checkpoint in --checkpoint-dir (same plan, semantic tokens, seed and steps).")
+    var resume: Bool = false
+
     @Option(name: .long, help: "WAV sample format.")
     var format: DecodeCommand.WAVFormat = .int16
 
@@ -52,10 +58,21 @@ struct SynthesizeCommand: AsyncParsableCommand {
         let config = try resolveConfig(session.config, odeSteps: odeSteps)
 
         let synthesizer = Synthesizer(model: session.model, config: config)
+        let checkpointURL = checkpointDir.map { URL(fileURLWithPath: $0) }
+        var resumeFrom: NARCheckpoint?
+        if resume {
+            guard let checkpointURL else { throw YuE2Error.invalidRequest("--resume needs --checkpoint-dir") }
+            resumeFrom = try NARCheckpoint.load(from: checkpointURL)
+            guard let resumeFrom else { throw YuE2Error.missingFile("no NAR checkpoint in \(checkpointURL.path)") }
+            FileHandle.standardError.write(Data("resuming NAR from step \(resumeFrom.step)/\(resumeFrom.steps)\n".utf8))
+        }
         let narStart = Date()
         let latents = try synthesizer.synthesize(
-            prefix: savedPlan.prefix, codec: semanticTokens, seed: UInt64(savedPlan.request.seed))
+            prefix: savedPlan.prefix, codec: semanticTokens, seed: UInt64(savedPlan.request.seed),
+            resume: resumeFrom,
+            onStep: checkpointURL.map { url in { checkpoint in try? checkpoint.save(to: url) } })
         let narSeconds = Date().timeIntervalSince(narStart)
+        if let checkpointURL { NARCheckpoint.clear(in: checkpointURL) }
 
         YuE2MemoryManager.releaseBetweenStages()
         YuE2MemoryManager.configure(for: .vae)

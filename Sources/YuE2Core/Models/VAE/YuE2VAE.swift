@@ -93,6 +93,7 @@ public final class YuE2VAE: Module {
         var tileIndex = 0
         var start = 0
         while start < frames {
+            YuE2GPUGate.shared.wait()
             let end = min(frames, start + coreFrames)
             let left = max(0, start - haloFrames)
             let right = min(frames, end + haloFrames)

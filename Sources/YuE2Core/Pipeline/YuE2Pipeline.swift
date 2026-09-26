@@ -52,6 +52,8 @@ public final class YuE2Pipeline {
         semanticSampling: Sampling? = nil,
         profiling profilingSession: ProfilingSession? = nil,
         onEvent: ((PipelineEvent) -> Void)? = nil,
+        narResume: NARCheckpoint? = nil,
+        onNARStep: ((NARCheckpoint) -> Void)? = nil,
         cancel: (() -> Bool)? = nil
     ) async throws -> SongResult {
         let e2eStart = Date()
@@ -110,6 +112,7 @@ public final class YuE2Pipeline {
                     }
                 }
                 : nil,
+            resume: narResume, onStep: onNARStep,
             cancel: cancel)
         if let narLoadError { throw narLoadError }
         profiler.endFlowMatching()

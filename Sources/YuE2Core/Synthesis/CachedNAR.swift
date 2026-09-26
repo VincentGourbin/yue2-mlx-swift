@@ -59,6 +59,12 @@ public final class CachedNAR {
             x = x + layer.narSelfAttn.attend(q, K, V, mask: .none)
             x = x + layer.narMlp(layer.narPreMlpLayernorm(x))
             taps?("after_layer_\(i)", x)
+            // Mobile: materialize each layer so the GPU gate can park the worker within one
+            // layer's worth of work (`YuE2ExecutionPolicy.evalPerLayer`); numerically identical.
+            if YuE2ExecutionPolicy.evalPerLayer {
+                eval(x)
+                YuE2GPUGate.shared.wait()
+            }
         }
 
         let out = model.llm2vae(model.model.norm(x))
@@ -84,7 +90,8 @@ public final class CachedNAR {
         startStep: Int = 0,
         onProgress: ((Int, Int) -> Void)? = nil,
         cancel: (() -> Bool)? = nil,
-        onVelocityCall: (() -> Void)? = nil
+        onVelocityCall: (() -> Void)? = nil,
+        onStep: ((_ completedStep: Int, _ state: MLXArray) -> Void)? = nil
     ) throws -> MLXArray {
         guard steps >= 1 else {
             throw YuE2Error.invalidRequest("steps must be a positive integer")
@@ -95,7 +102,7 @@ public final class CachedNAR {
         var state = (initialState ?? noise).asType(dtype)
         let dt = 1.0 / Double(steps)
         for step in startStep..<steps {
-            if cancel?() == true {
+            if cancel?() == true || !YuE2GPUGate.shared.wait(cancel: cancel) {
                 throw YuE2Error.cancelled
             }
             let t = 1.0 - Double(step) * dt
@@ -109,6 +116,7 @@ public final class CachedNAR {
             let second = velocity(state: mid, rawT: Self.clampedLogit(t - dt / 2))
             state = state - second * MLXArray(Float(dt)).asType(dtype)
             eval(state)
+            onStep?(step + 1, state)
             onProgress?(step + 1, steps)
         }
         let result = state.asType(.float32)
@@ -146,7 +154,7 @@ public final class CachedNAR {
         var state = noise.asType(.float16)
         let dt = 1.0 / Double(steps)
         for step in 0..<steps {
-            if cancel?() == true {
+            if cancel?() == true || !YuE2GPUGate.shared.wait(cancel: cancel) {
                 throw YuE2Error.cancelled
             }
             let t = 1.0 - Double(step) * dt
