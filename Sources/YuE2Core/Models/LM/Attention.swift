@@ -69,7 +69,7 @@ final class YuE2Attention: Module {
         return (q, k, v)
     }
 
-    private func rotateExplicit(_ x: MLXArray, positions: MLXArray) -> MLXArray {
+    func rotateExplicit(_ x: MLXArray, positions: MLXArray) -> MLXArray {
         let half = headDim / 2
         let i = MLXArray(Array(0..<half)).asType(.float32)
         let invFreq = MLX.exp(i * (-Foundation.log(ropeBase) / Float(half)))

@@ -28,6 +28,7 @@ struct ModelOptions: ParsableArguments {
 /// conformance (`RawValue == String`) is picked up here instead, in the one target that imports both.
 extension ModelSession.Quantization: ExpressibleByArgument {}
 extension YuE2ComputePrecision: ExpressibleByArgument {}
+extension YuE2ExecutionPolicy.NARCompute: ExpressibleByArgument {}
 /// T-6.2 (E2) sensitivity sweep only, `yue2 parity nar --sweep-family`.
 extension YuE2NARSweep.Family: ExpressibleByArgument {}
 /// T-6.3 (E3): `--vae-backend`/`--backend` on `decode`/`parity vae`.

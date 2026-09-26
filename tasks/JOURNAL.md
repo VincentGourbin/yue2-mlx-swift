@@ -478,3 +478,12 @@ Gabarit : voir AGENTS.md §6. Les lignes de validation sont recopiées telles qu
 - Mémoire : rien de retenu par le moteur (état passé vivant au callback ; 384 Ko transitoires à l'écriture fp32) ; eval par couche +40-60 Mo de pic à 1 024 frames, hors du pic de la chanson.
 - Limites : temps mesurés sous un entraînement LoRA tiers (inexploitables, notés comme tels) ; reprise limitée aux chansons mono-chunk ; fork mlx-core non réalisé (recommandé après, à proposer en amont) ; pas de commit (à la main de Vincent, 0.2.1 proposée).
 
+## Hors fiche — précision fp16 et résidence (2026-09-26, suite)
+- Question de Vincent : le 8 bits peut-il tenir sous 4 Go comme le 4 bits ? Réponse : oui (3,2 Go mesurés pour `qint8-all --quant-head` sur Mac profil mobile), et surtout bug trouvé : `applyPrecision(.fp16)` matérialisait la voie NAR non résidente (+1,44 Go), ce qui explique le pic iPhone de la phase plan. Correctif `applyPrecision(_:where:)` + parcage en zéros paresseux ; test `precisionCastLeavesNonResidentBranchUnallocated` ; pitfall et log écrits. Pic de la chanson courte int4-mixed-head fp16 : 3 333 → 2 421 Mo.
+- Pas de commit ni de release (0.2.2 proposée : c'est un gain de 1,4 Go sur l'iPhone).
+
+## Hors fiche — comparatif 70 s et limites mobiles (2026-09-26, soir)
+- Demande de Vincent : comparo 16/8/4 bits, mémoire et temps, chanson de 70 s, avec et sans optimisations mémoire ; puis CPU vs GPU des premières étapes.
+- Fait : 15 runs profilés (`.local-runs/cmp70-*`), `benchmarks/mac-70s-quant-comparison-2026-09-26.md`, entrée log ; `YuE2MemoryManager.mobileLimitsMB()` (limites adaptatives + overrides), `MobileLimitsTests`. Diagnostic CPU : `sample` + `time -l` sur `yue2 semantic`.
+- Limites : entraînement LoRA tiers sur le GPU pendant toute la série (temps indicatifs) ; 8 bits optimisé +26 % inexpliqué ; pas de commit (0.2.2 proposée : correctif fp16, porte, checkpoint, limites adaptatives).
+

@@ -212,4 +212,37 @@ struct QuantizationTests {
     // ODE trajectory in a way a single AR forward pass never sees — a real accuracy limit, not a
     // bug (structural quantization coverage is verified above). See `tasks/ASK.md` (T-6.2): this
     // blocks the pack export and needs Vincent's call before proceeding.
+
+    /// `dequantizeWeights(of: .nar)` swaps the 8-bit NAR projections for bf16 `Linear`s holding
+    /// the same weights: the velocity field must match the packed path up to accumulation order,
+    /// and the AR branch must stay quantized.
+    @Test func dequantizedNARVelocityMatchesPackedPath() throws {
+        let fixture = try loadFixture(name: "nar")
+        let config = try YuE2Config.load(from: try lmDir().appendingPathComponent("config.json"))
+        let model = try LMWeightLoader.load(directory: try lmDir(), config: config, quantization: .int4Mixed)
+        let noise = try #require(fixture["noise"])
+        let arTokens = try idArray(fixture, "ar_tokens")
+        let nar = CachedNAR(model: model, chunk: NARChunk(arTokens: arTokens, noise: noise))
+        let packed = nar.velocity(state: noise, rawT: 0.0)
+        eval(packed)
+
+        let added = model.dequantizeWeights(of: .nar)
+        #expect(added > 1_000_000_000, "expected the 8-bit NAR branch to add > 1 GB once dequantized, got \(added)")
+        for (path, module) in model.leafModules().flattened() {
+            guard module is Linear else { continue } // q_norm/k_norm live under the same paths
+            if path.contains("nar_self_attn") || path.contains("nar_mlp") {
+                #expect(!(module is QuantizedLinear), "\(path) still quantized")
+            } else if path.contains("self_attn") || path.contains(".mlp.") {
+                #expect(module is QuantizedLinear, "\(path) lost its quantization")
+            }
+        }
+        let dequantized = nar.velocity(state: noise, rawT: 0.0)
+        let rel = MLX.mean(MLX.abs(dequantized - packed)).item(Float.self) / MLX.mean(MLX.abs(packed)).item(Float.self)
+        // The dequantized weights are rounded to bf16 (scale · q + bias no longer fits 8 bits of
+        // mantissa), which `quantizedMatmul` avoids by dequantizing in fp32 inside the kernel:
+        // measured rel ≈ 1-3e-2 on the real fixture, inside E2's 5e-2 velocity budget.
+        print("DEQUANT_NAR rel=\(rel)")
+        #expect(rel < 5e-2, "rel \(rel)")
+    }
 }
+

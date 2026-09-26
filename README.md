@@ -1,42 +1,26 @@
 # yue2-mlx-swift
 
-Port Swift / MLX de **YuE2** (m-a-p, septembre 2026) pour Apple Silicon : paroles et style → partition ABC éditable → tokens sémantiques → latents acoustiques par flow matching → chanson stéréo 48 kHz. Le pipeline complet tourne en local sur un Mac, sans Python à l'exécution.
+Port Swift / MLX de **YuE2** (m-a-p, septembre 2026) pour Apple Silicon : paroles et style → partition ABC éditable → tokens sémantiques → latents acoustiques par flow matching → chanson stéréo 48 kHz. Le pipeline complet tourne en local sur un Mac ou un iPhone 15 Pro Max, sans Python à l'exécution.
 
-> Chanson de test du dépôt de référence (`examples/song.json`, seed 831001) : 63 s d'audio générées en **65 s** sur un MacBook Pro M3 Max en bf16, **56 s** avec la voie autorégressive quantifiée en 8 bits. Détails et méthode dans `BENCHMARKS.md`.
+**Version 1.0.0** : six configurations de référence mesurées et reproductibles, de 65,7 s pour 70 s d'audio (Mac, 4 bits) à 3,4 Go de pic mémoire (iPhone).
 
-## Ce que ce dépôt cherche à faire
+| Documentation | |
+|---|---|
+| [Les six configurations de référence](docs/References.md) | quel pack, quels réglages, pour quelle machine |
+| [Benchmarks : méthode, résultats, reproduction](docs/Benchmarks.md) | protocole, tableaux Mac et iPhone, Core AI, comment contribuer |
+| [Ligne de commande](docs/CLI.md) | toutes les commandes et options de `yue2` |
+| [API Swift](docs/API.md) | `ModelSession`, `YuE2Pipeline`, résidence, checkpoint, porte GPU, backends VAE |
+| [iPhone](docs/iOS.md) | intégration, perte du GPU en arrière-plan, mesures sur l'appareil |
+| [Poids et packs](docs/Weights.md) | téléchargement, packs pré-quantifiés, licence, republication |
+| [Base de connaissances](docs/knowledge/index.md) | journal des mesures, décisions et pièges (OKF, lisible par humains et agents) |
+| [Changelog](CHANGELOG.md) | 0.1 → 1.0.0 |
 
-1. **Reproduire fidèlement l'inférence YuE2** en MLX Swift, module par module, avec une preuve numérique à chaque étape : chaque composant est comparé à l'implémentation PyTorch de référence sur des fixtures avant d'être considéré comme porté (voir « Parité » ci-dessous).
-2. **Réutiliser les briques déjà validées** dans les autres ports MLX Swift de l'auteur (attention Qwen3, chargeur safetensors strict, décodeur audio DAC/Oobleck, export WAV, profiler, GUI de bench) plutôt que de réécrire.
-3. **Servir de banc d'essai pour l'exécution d'un plan par des agents de code** : le port a été réalisé par des agents à partir de fiches de tâches (`tasks/`), chacune avec ses lectures, ses validations en ligne de commande et son entrée de journal. Le plan lui-même est dans `plan/`.
+## Démarrer
 
-## Où on en est (26 septembre 2026 — version 0.2.1)
-
-| Jalon | Contenu | État |
-|---|---|---|
-| 1 | Fondations : protocole de prompt, tokenizer, téléchargement, décodeur VAE Oobleck fp32, décodage tuilé exact, `yue2 decode` | ✅ validé, parité VAE réelle max 1,4e-3 |
-| 2 | Backbone LM (Qwen3-style, deux voies par couche), cache KV, chaîne de sampling, `lm_head` restreint par phase, génération avec CFG, `yue2 plan` / `yue2 semantic`, profiler | ✅ validé, parité LM réelle : 8/8 tokens greedy identiques sur les deux phases |
-| 3 | Voie NAR : flow matching sur le cache KV du préfixe, solveur midpoint 32 pas, `yue2 generate` bout en bout | ✅ validé, première chanson écoutée le 18 septembre |
-| 4 | Optimisations mesurées A/B/B/A : réutilisation du cache KV pour le NAR, activation SnakeBeta compilée (VAE −30 %), quantification 8 bits de la voie AR (AR −30 %, opt-in `--quant qint8`), GUI de bench SwiftUI | ✅ validé ; deux optimisations tentées puis retirées faute de gain |
-| 5 | Encodeur VAE (audio → latents), `yue2 encode`, round-trip audio réel | ✅ code et parité validés ; **écoute du round-trip encore en attente** |
-| 6 | Backend iPhone : pack `int4-mixed-head` (2,5 Go), résidence des poids par étape, head restreint quantifié, tuile VAE 256 fp16, VAE Core AI GPU en option, porte GPU + checkpoint par pas du NAR (reprise bit-exacte), profil mémoire mobile | ✅ mesuré sur iPhone 15 Pro Max : chanson de 30 s en 273 s, 60 s en ≈ 12,7 min, pic 3,2-3,6 Go ; première écoute validée (G-10) |
-| — | `yue2 remix-experimental` : réécriture SDEdit d'un latent réel sous un nouveau conditionnement | ⚠️ expérimental, hors plan, non validé |
-
-Ce qui a été volontairement laissé de côté : MERT2 et SheetSage2 (transcription pour les covers, inutiles pour générer depuis du texte), le mode `cot: off` (supporté, jamais mesuré), la reproduction bit-à-bit du générateur aléatoire PyTorch (le bruit initial est tiré côté Swift ; la parité se fait avec un bruit injecté).
-
-## Ce qu'il reste à faire
-
-- **Écoutes humaines en suspens** : le round-trip encodeur → décodeur sur un fichier réel (`tasks/ASK.md`, T-5.2) et la comparaison bf16 / `qint8` sur une chanson complète (T-4.5). Les parités numériques sont vertes, mais le juge final est l'oreille.
-- **Backend iPhone, suite** : le pipeline tourne sur iOS 27 (app séparée `yue2-ios`, moteur épinglé en version exacte). Restent le throttling thermique de l'A17 Pro (pacing dans l'app), le fork minimal de mlx-core pour rendre rattrapable la perte du GPU en arrière-plan (question Q7), le palier NAR Core AI 2 048 et le Neural Engine (impasse avec `coreai-torch 0.4.2`). Plan : `plan/13-ios-backend.md`, fiches `tasks/T-6.*`, mesures `docs/knowledge/benchmarks/`.
-- **Mesures manquantes** : mode `cot: off` (deux branches CFG), chansons longues (3 à 6 min, plusieurs chunks NAR), `int4` sur la voie AR.
-- **Hors périmètre pour l'instant** : serveur d'inférence, covers audio complètes (transcription), quantification de la voie NAR.
-
-## Installation et usage
-
-Prérequis : macOS 15+, Xcode 26+ (Swift 6), Apple Silicon, environ 8 Go d'espace pour les poids.
+Prérequis : macOS 15+ (macOS 27 pour Core AI), Xcode 26+ (Swift 6), Apple Silicon, ≈ 8 Go d'espace pour les poids.
 
 ```bash
-# build (xcodebuild, jamais `swift build` pour produire un binaire : la metallib de MLX ne serait pas trouvée)
+# build (xcodebuild, jamais `swift build` pour un binaire : la metallib de MLX ne serait pas trouvée)
 xcodebuild -scheme yue2 -configuration Release -derivedDataPath .xcodebuild build
 BIN=.xcodebuild/Build/Products/Release/yue2
 
@@ -45,47 +29,73 @@ export YUE2_MODELS_DIR=$HOME/Library/Caches/models
 $BIN download --models-dir $YUE2_MODELS_DIR
 $BIN info
 
-# une chanson complète
-$BIN generate --request reference/yue/examples/song.json --out outputs/song --profile
-#   options : --cot full|melody|off  --seed N  --abc-file score.abc  --cfg-scale X  --vae standard|legacy  --quant qint8
-
-# par étapes (chaque étape est reprenable)
-$BIN plan      --request song.json --out outputs/plan        # partition ABC
-$BIN semantic  --plan outputs/plan --out outputs/song        # tokens sémantiques
-$BIN synthesize --semantic outputs/song                      # latents (flow matching)
-$BIN decode    --latents outputs/song/latent.npy --out outputs/song/audio.wav
-$BIN encode    --audio input.wav --out outputs/enc --roundtrip   # audio → latents (→ audio)
+# une chanson complète avec une configuration de référence
+$BIN references
+$BIN generate --request reference/yue/examples/song.json --reference 4bit-fast --out outputs/song --profile
 ```
 
-Le fichier de requête suit le format de référence : `style`, `lyrics` (avec balises `[Verse]`, `[Chorus]`…), `cot`, `seed`, `abc` optionnel. Les artefacts d'un run (`score.abc`, `semantic.npy`, `latent.npy`, `audio.wav`, `result.json` avec les temps et les hachages) sont écrits dans `--out`.
+La première utilisation d'un pack quantifié le produit localement (quelques minutes, une fois). Le fichier de requête suit le format de référence : `style`, `lyrics` (balises `[Verse]`, `[Chorus]`…), `cot`, `seed`, `abc` optionnel. Les artefacts (`score.abc`, `semantic.npy`, `latent.npy`, `audio.wav`, `result.json`, `trace.json`) sont écrits dans `--out`.
 
-GUI de bench : `xcodebuild -scheme yue2-bench-ui -configuration Release -derivedDataPath .xcodebuild build` puis lancer le binaire.
+Par étapes, chacune reprenable :
+
+```bash
+$BIN plan       --request song.json --out outputs/plan
+$BIN semantic   --plan outputs/plan --out outputs/song
+$BIN synthesize --plan outputs/plan --semantic outputs/song --out outputs/song --checkpoint-dir outputs/song
+$BIN decode     --latents outputs/song/latent.npy --out outputs/song/audio.wav --precision fp16
+```
+
+Depuis Swift :
+
+```swift
+let profile = YuE2ReferenceProfile.named("4bit-lean")!; profile.applyGlobalPolicy()
+let session = try await ModelSession.load(modelsDir: dir, quant: profile.quant, quantizeHead: profile.quantizeHead,
+                                          precision: profile.precision, residency: [.ar])
+let vae = try await loadVAEBackend(.mlx, directory: dir.appendingPathComponent("YuE2-Vae"), precision: .fp16)
+let song = try await YuE2Pipeline(session: session, vae: vae, config: session.config).generate(request: request)
+```
+
+## Les six configurations de référence
+
+Chanson de 70 s d'audio, 32 pas d'ODE, MacBook Pro M3 Max, GPU libre, 120 s de refroidissement ([détail](docs/References.md)).
+
+| Id | Pack | Temps | Pic mémoire | Pour |
+|---|---|---|---|---|
+| `4bit-fast` | int4-mixed-head, tout résident, NAR bf16 | **65,7 s** | 8,9 Go | Mac : plus vite que le temps réel |
+| `4bit-lean` | int4-mixed-head, résidence par étape, fp16, tuile 256 | 77,7 s | **3,4 Go** | iPhone 15 Pro Max, Mac 8 Go |
+| `8bit-fast` | qint8-all-head, tout résident, NAR bf16 | 76,5 s | 9,9 Go | Mac, voie AR en 8 bits |
+| `8bit-lean` | qint8-all-head, résidence, fp16, tuile 256 | 79,3 s | 4,4 Go | iPhone avec marge, Mac 8-16 Go |
+| `16bit-fast` | bf16, tout résident | 84,9 s | 12,0 Go | référence qualité |
+| `16bit-lean` | bf16, résidence par étape, tuile 256 | 84,9 s | 6,9 Go | Mac 16-24 Go |
+
+Sur l'iPhone 15 Pro Max (`4bit-lean`) : 30 s de chanson en 273 s, 60 s en ≈ 12,7 min avec le throttling thermique, première écoute validée ([mesures](docs/iOS.md)).
+
+## Ce que fait le port
+
+1. **Reproduire fidèlement l'inférence YuE2** en MLX Swift, module par module, avec une preuve numérique à chaque étape (fixtures PyTorch, tolérances fixées avant le portage : VAE fp32 max 2e-3, LM bf16 rel < 2 %, tokens greedy exacts).
+2. **Tenir dans un téléphone** : quantification 4 / 8 bits par voie, résidence des poids par étape (le budget est le max des étapes, pas leur somme), checkpoint par pas d'ODE et porte GPU pour survivre à iOS qui coupe le GPU en arrière-plan, limites mémoire calées sur la mémoire disponible.
+3. **Mesurer avant d'affirmer** : tout chiffre vient de `swift-mlx-profiler`, avec refroidissement, A/B/B/A et contrôle ; le journal des mesures, des décisions et des pièges est dans `docs/knowledge/`.
+4. **Servir de banc d'essai pour l'exécution d'un plan par des agents de code** : fiches de tâches dans `tasks/`, plan dans `plan/`.
+
+Hors périmètre : MERT2 et SheetSage2 (covers depuis l'audio), `cot: off` (supporté, non mesuré), reproduction bit à bit du générateur aléatoire PyTorch (parité sur bruit injecté).
 
 ## Parité et tests
 
-Deux niveaux, exécutés par `Scripts/run-tests.sh` (parallélisation swift-testing forcée à 1 à cause d'un interblocage connu dans mlx-swift) :
-
-- **Sans poids, toujours vert** : fixtures « tiny » committées sous `parity/`, générées par `Scripts/reference/tiny_fixtures.py` avec les classes PyTorch upstream sur des modèles aléatoires seedés, comparées à 1e-4. Chaque test de parité vérifie d'abord qu'aucun paramètre n'est resté non alimenté.
-- **Avec les vrais poids** (`YUE2_MODELS_DIR`) : fixtures produites par `Scripts/reference/real_fixtures.py {vae|lm|nar|song}`, comparées par `yue2 parity {vae|lm|nar}` et par les tests `Real*`. Tolérances : VAE fp32 max 2e-3, LM bf16 erreur relative < 2 %, argmax et tokens greedy exacts.
-
-Suite actuelle : 128 tests. Environnement Python de référence : `Scripts/setup-reference-env.sh` (torch 2.10, transformers 4.57.6, paquet `yue2` upstream).
+`Scripts/run-tests.sh` (swift-testing, parallélisation 1 : interblocage connu dans mlx-swift). Deux niveaux : sans poids (fixtures tiny sous `parity/`, 149 tests, toujours verts) et avec les vrais poids (`YUE2_MODELS_DIR` ; `Real*`, `Quantization`, `GenerationSmoke`). `yue2 parity vae|lm|nar` contre `Scripts/reference/real_fixtures.py`. Environnement Python de référence : `Scripts/setup-reference-env.sh`.
 
 ## Organisation du dépôt
 
 ```
-Sources/YuE2Core/      bibliothèque : Protocol, Tokenizer, Loading, Models/LM, Models/VAE, Generation, Synthesis, Pipeline, Audio, Memory
-Sources/YuE2CLI/       yue2 : info, download, plan, semantic, synthesize, decode, generate, encode, parity, profile
+Sources/YuE2Core/      Protocol, Tokenizer, Loading, Models/{LM,VAE}, Generation, Synthesis, Pipeline, Audio, Memory, Backends, CoreAI, Configuration
+Sources/YuE2CLI/       yue2 : info, download, generate, plan, semantic, synthesize, decode, encode, references, parity, profile, bench-coreai-nar
 Sources/YuE2BenchUI/   yue2-bench-ui : génération, mesures (profiler), historique, lecteur
 Tests/YuE2Tests/       swift-testing, deux niveaux
+docs/                  documentation (ci-dessus) et base de connaissances
+BENCHMARKS.md          toutes les mesures, une ligne par run, source unique = swift-mlx-profiler
+Scripts/               build, tests, parité, fixtures Python, bancs, export Core AI
 parity/                fixtures tiny committées
-plan/                  le plan de portage, un fichier par section (PLAN.md n'est que le sommaire)
-tasks/                 fiches de tâches, état, journal et questions (le protocole d'exécution par agent)
-Scripts/               build, tests, parité, fixtures Python, bench
-docs/knowledge/        journal des mesures et des pièges rencontrés
-BENCHMARKS.md          toutes les mesures, source unique = swift-mlx-profiler
+plan/, tasks/          le plan de portage et les fiches d'exécution par agent
 ```
-
-Faits d'architecture à connaître avant de toucher au code : `plan/02.1-vocabulaire.md` à `plan/02.8-dtypes.md`. Pièges connus : `plan/09-pieges.md`. Conventions : `CLAUDE.md`.
 
 ## Licences
 

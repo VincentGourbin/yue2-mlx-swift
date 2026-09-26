@@ -8,7 +8,7 @@ import MLXNN
 /// The reference decoder is fp32-only (README: "Keep the VAE in FP32"); `fp16` is an E1
 /// (`plan/13-ios-backend.md` §13.5) experiment — a Neural Engine backend needs fp16 weights,
 /// so this measures whether the quality loss is acceptable before committing to that path.
-public enum VAEPrecision {
+public enum VAEPrecision: Sendable {
     case fp32
     case fp16
 

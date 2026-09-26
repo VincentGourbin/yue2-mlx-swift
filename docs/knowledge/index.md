@@ -13,10 +13,12 @@ Mesures reproductibles (état des horloges GPU, écart ±2 %).
 
 ## Decisions
 Choix d'architecture motivés (pourquoi telle voie, tel dtype, tel cache).
+- [Six configurations de référence](decisions/reference-profiles.md) — 4/8/16 bits × rapide/économe, temps et pics sur 70 s, choix motivés, points ouverts.
 - [Résidence des poids par étape (iPhone)](decisions/stage-scoped-weight-residency.md) — le budget mémoire compte le max des étapes, pas leur somme ; implémentation MLX pure.
 
 ## Pitfalls
 Pièges rencontrés et leur correctif, numérotés comme ceux de PLAN.md §9.
+- [Conversion de précision et voie non résidente](pitfalls/precision-cast-materializes-parked-branch.md) — `applyPrecision(.fp16)` matérialisait la voie NAR parquée (+1,44 Go, le pic iPhone) ; conversion restreinte aux clés résidentes.
 - [Core AI, formes énumérées : zéro-padding des latents](pitfalls/coreai-enumerated-shape-zero-padding.md) — la fin de tuile complétée par des zéros perd 34 dB ; fenêtres à forme exacte (`planVAETiles`).
 
 ## Investigations

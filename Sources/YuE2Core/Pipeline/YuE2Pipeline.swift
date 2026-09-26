@@ -110,8 +110,17 @@ public final class YuE2Pipeline {
                     } catch {
                         narLoadError = error
                     }
+                    if YuE2ExecutionPolicy.narCompute == .dequantized {
+                        let bytes = session.model.dequantizeWeights(of: .nar)
+                        YuE2Debug.log("dequantized NAR projections for the solve: +\(bytes / (1024 * 1024)) MB")
+                    }
                 }
-                : nil,
+                : { [session] _ in
+                    if YuE2ExecutionPolicy.narCompute == .dequantized {
+                        let bytes = session.model.dequantizeWeights(of: .nar)
+                        YuE2Debug.log("dequantized NAR projections for the solve: +\(bytes / (1024 * 1024)) MB")
+                    }
+                },
             resume: narResume, onStep: onNARStep,
             cancel: cancel)
         if let narLoadError { throw narLoadError }

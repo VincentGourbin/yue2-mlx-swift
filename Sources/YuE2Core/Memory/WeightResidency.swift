@@ -88,4 +88,33 @@ extension YuE2ForCausalLM {
     public func releaseAllWeights() -> Int {
         releaseWeights { _ in true }
     }
+
+    /// Replaces every `QuantizedLinear` that only `path` reads with a plain `Linear` holding the
+    /// dequantized weight (`scales.dtype`, bf16 or fp16) — for machines where memory is not the
+    /// constraint: MLX's 8-bit quantized matmul is *slower* than a bf16 GEMM on the NAR's large
+    /// activations (70 s song, 1 750 frames: NAR 58-61 s packed vs 49-53 s bf16, 2026-09-26),
+    /// while the AR decode (one row at a time) is faster packed. Same weights, so the numbers
+    /// only differ by accumulation order. The branch can still be `releaseWeights(of:)`-dropped
+    /// but no longer reloaded with `loadWeights(of:)` (its parameter keys changed): use it on a
+    /// session that will be recreated. Returns the bytes the dequantized copies add.
+    @discardableResult
+    public func dequantizeWeights(of path: YuE2WeightPath) -> Int {
+        var updates: [(String, Module)] = []
+        var bytes = 0
+        for (modulePath, module) in leafModules().flattened() {
+            guard let quantized = module as? QuantizedLinear,
+                YuE2WeightPath.of(key: modulePath + ".weight") == path
+            else { continue }
+            let weight = dequantized(
+                quantized.weight, scales: quantized.scales, biases: quantized.biases,
+                groupSize: quantized.groupSize, bits: quantized.bits, mode: quantized.mode)
+            eval(weight)
+            bytes += weight.nbytes
+            updates.append((modulePath, Linear(weight: weight, bias: quantized.bias)))
+        }
+        guard !updates.isEmpty else { return 0 }
+        update(modules: ModuleChildren.unflattened(updates))
+        return bytes
+    }
 }
+

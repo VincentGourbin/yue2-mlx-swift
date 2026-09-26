@@ -92,4 +92,22 @@ struct RealLMParityTests {
             model: model, head: head, prefix: prefix, sampling: Self.greedySampling, seed: 0, bounds: .semantic)
         #expect(result.tokens == (try idArray(fixture, "greedy_semantic")))
     }
+
+    /// The compiled single-token step (`YuE2ExecutionPolicy.compiledDecode`) reproduces the
+    /// fixture's greedy decodes token for token on both phases — same math, fused kernels.
+    @Test(arguments: ["abc", "semantic"])
+    func greedyThroughCompiledDecodeMatchesFixture(_ phase: String) throws {
+        let fixture = try loadFixture(name: "lm")
+        let (model, _) = try loadRealModel()
+        let prefix = try idArray(fixture, "prefix_\(phase)")
+        let bounds: LogitsBounds = phase == "abc" ? .abc : .semantic
+        let head = model.makeRestrictedHead(bounds: bounds)
+        let saved = YuE2ExecutionPolicy.compiledDecode
+        YuE2ExecutionPolicy.compiledDecode = true
+        defer { YuE2ExecutionPolicy.compiledDecode = saved }
+        let result = try TokenGenerator.generate(
+            model: model, head: head, prefix: prefix, sampling: Self.greedySampling, seed: 0, bounds: bounds)
+        #expect(result.tokens == (try idArray(fixture, "greedy_\(phase)")))
+    }
 }
+

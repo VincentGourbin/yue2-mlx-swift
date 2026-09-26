@@ -34,6 +34,12 @@ public enum LMWeightLoader {
                 from: YuE2PrequantizedCheckpoint.url(lmDirectory: directory, quantization: quantization, quantizeHead: quantizeHead),
                 quantization: quantization, quantizeHead: quantizeHead,
                 retaining: residency == .all ? nil : { residency.retains(key: $0) })
+            if residency != .all {
+                // The skipped branch still holds its lazy init graphs (random weights, quantized
+                // on the fly): park them as lazy zeros so any stray evaluation costs a memset,
+                // not a quantization of random noise. Still unevaluated: no allocation here.
+                model.releaseWeights { !residency.retains(key: $0) }
+            }
             YuE2MemoryManager.configure(for: .load)
             return model
         }

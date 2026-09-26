@@ -60,6 +60,25 @@ public final class YuE2GPUGate: @unchecked Sendable {
 /// Execution knobs that trade a little synchronization for a shorter distance between two gate
 /// checks.
 public enum YuE2ExecutionPolicy {
+    /// How the NAR branch's quantized projections are computed during the solve.
+    public enum NARCompute: String, CaseIterable, Sendable {
+        /// `quantizedMatmul` on the packed weights (memory-lean; the iPhone default).
+        case packed
+        /// Dequantized once to bf16/fp16 before the solve (`YuE2ForCausalLM.dequantizeWeights(of:
+        /// .nar)`): +1.4 GB for the 8-bit NAR, ≈ 15 % faster on a Mac (large-M matmuls).
+        case dequantized
+    }
+
+    /// Single-token AR steps through `CompiledDecodeStep` (per-layer fused graphs) instead of
+    /// the op-by-op forward. Default off; `YUE2_COMPILED_DECODE=1` or `--compiled-decode`.
+    nonisolated(unsafe) public static var compiledDecode: Bool =
+        ProcessInfo.processInfo.environment["YUE2_COMPILED_DECODE"] == "1"
+
+    /// Default `.packed`; `YUE2_NAR_COMPUTE=dequantized` overrides (measurements, Mac).
+    nonisolated(unsafe) public static var narCompute: NARCompute = {
+        ProcessInfo.processInfo.environment["YUE2_NAR_COMPUTE"].flatMap(NARCompute.init(rawValue:)) ?? .packed
+    }()
+
     /// Evaluate the NAR velocity graph after every layer instead of once per ODE step. Turns a
     /// 10-20 s in-flight graph (iPhone, 1 500 frames) into 28 units of ≈ 0.2-0.4 s, so
     /// `YuE2GPUGate` can park the worker before iOS withdraws the GPU. Never changes the numbers

@@ -17,7 +17,7 @@ Sources/YuE2Core/{Protocol,Tokenizer,Loading,Models/LM,Models/VAE,Generation,Syn
 ## Key implementation facts (do not re-derive)
 See PLAN.md §2.1–§2.8: token ids, prompt format, MoT dual paths, RoPE non-interleaved after q/k-norm, logits processor order, NAR positions (RoPE absolute, pe local), midpoint solver in bf16, VAE Oobleck topology, weight-norm merge before layout conversion, natural length 1920·T − 64.
 ## Performance work — read before measuring
-GPU clock state moves results up to 10×: cool down before every point, A/B/B/A, control sample, judge against ±2 % spread. Profiler (`swift-mlx-profiler`) first, `print` never. Record durable findings in docs/knowledge/log.md.
+GPU clock state moves results up to 10×: cool down before every point, A/B/B/A, control sample, judge against ±2 % spread. Profiler (`swift-mlx-profiler`) first, `print` never. Before timing: `pgrep` for other GPU jobs (a LoRA training skewed a whole day ×3), make sure the prequantized pack already exists (first use quantizes and exports), write outputs under `.local-runs/bench.noindex/` (Spotlight indexes fresh WAV/npy and steals the CPU the AR phases depend on). Record durable findings in docs/knowledge/log.md.
 ## Engineering Knowledge Base
 docs/knowledge/ is an OKF bundle (index.md, log.md, pitfalls/, benchmarks/, decisions/).
 

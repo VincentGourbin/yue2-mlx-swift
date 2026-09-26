@@ -22,10 +22,18 @@ extension YuE2ForCausalLM {
     /// (piège n°8: never the whole parameter tree at once). No-op for `.bf16`. A quantization
     /// preset's packed `uint32` weights are untouched (`isFloatingPoint` excludes them); their
     /// `scales`/`biases` are cast like any other float.
-    public func applyPrecision(_ precision: YuE2ComputePrecision) {
+    ///
+    /// `where include`: restrict the cast to some keys — **required** under stage-scoped
+    /// residency. A non-resident branch holds *unevaluated* init graphs (random `Linear` weights,
+    /// lazily quantized); casting and evaluating their `scales`/`biases` forces the whole
+    /// quantized weight to materialize, i.e. allocates the branch that residency was meant to
+    /// skip (measured 2026-09-26: +1.44 GB, the NAR path, on every AR-only fp16 load — the
+    /// iPhone's plan-phase peak).
+    public func applyPrecision(_ precision: YuE2ComputePrecision, where include: ((String) -> Bool)? = nil) {
         guard let dtype = precision.dtype else { return }
         var casted = [String: MLXArray]()
-        for (key, value) in parameters().flattened() where value.dtype.isFloatingPoint && value.dtype != dtype {
+        for (key, value) in parameters().flattened()
+        where value.dtype.isFloatingPoint && value.dtype != dtype && (include?(key) ?? true) {
             let c = value.asType(dtype)
             eval(c)
             casted[key] = c
@@ -75,7 +83,7 @@ public final class ModelSession {
         let flag: YuE2WeightResidency = path == .ar ? .ar : .nar
         guard !resident.contains(flag) else { return }
         try LMWeightLoader.load(path: path, into: model, directory: lmDirectory, quantization: quant, quantizeHead: quantizeHead)
-        model.applyPrecision(precision)
+        model.applyPrecision(precision) { YuE2WeightPath.of(key: $0) == path }
         resident.insert(flag)
     }
 
@@ -110,14 +118,14 @@ public final class ModelSession {
     ) async throws -> ModelSession {
         let lmDir = modelsDir.appendingPathComponent("YuE2-3B")
         let config = try YuE2Config.load(from: lmDir.appendingPathComponent("config.json"))
-        let model = try LMWeightLoader.load(
-            directory: lmDir, config: config, quantization: quant, quantizeHead: quantizeHead, residency: residency)
-        model.applyPrecision(precision)
-        let tokenizer = try await YuE2Tokenizer.load(modelDir: lmDir)
-        let generationConfig = try GenerationConfig.load(from: lmDir.appendingPathComponent("yue2_generation_config.json"))
         let effective: YuE2WeightResidency =
             (quant != .none && !YuE2PrequantizedCheckpoint.exists(lmDirectory: lmDir, quantization: quant, quantizeHead: quantizeHead))
             ? .all : residency
+        let model = try LMWeightLoader.load(
+            directory: lmDir, config: config, quantization: quant, quantizeHead: quantizeHead, residency: residency)
+        model.applyPrecision(precision, where: effective == .all ? nil : { effective.retains(key: $0) })
+        let tokenizer = try await YuE2Tokenizer.load(modelDir: lmDir)
+        let generationConfig = try GenerationConfig.load(from: lmDir.appendingPathComponent("yue2_generation_config.json"))
         return ModelSession(
             model: model, tokenizer: tokenizer, config: generationConfig, resident: effective,
             lmDirectory: lmDir, quant: quant, quantizeHead: quantizeHead, precision: precision)

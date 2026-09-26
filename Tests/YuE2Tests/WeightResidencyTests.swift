@@ -101,4 +101,32 @@ struct WeightResidencyTests {
         let expected = try #require(raw["velocity_raw0.0"])
         #expect(maxAbsDiff(nar.velocity(state: noise, rawT: 0.0), expected) <= 1e-4)
     }
+
+    /// The fp16 cast must not touch a non-resident branch: casting (and evaluating) its lazy
+    /// `scales`/`biases` would materialize the whole branch that residency skipped.
+    @Test func precisionCastLeavesNonResidentBranchUnallocated() throws {
+        let dir = try makeTinyLMDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let full = try loadedTinyModel()
+        let narBytes = full.parameters().flattened()
+            .filter { YuE2WeightPath.of(key: $0.0) == .nar }.reduce(0) { $0 + $1.1.nbytes }
+
+        let partial = try LMWeightLoader.load(directory: dir, config: tinyLMConfig(), residency: [.ar])
+        let before = MLX.Memory.activeMemory
+        partial.applyPrecision(.fp16) { YuE2WeightResidency([.ar]).retains(key: $0) }
+        let scoped = MLX.Memory.activeMemory - before
+        // A restricted cast allocates only the fp16 copies of the AR branch: well under the
+        // NAR branch's size. (The unrestricted cast is what the iPhone paid: +1.44 GB.)
+        #expect(scoped < narBytes / 2, "restricted fp16 cast allocated \(scoped) bytes, NAR branch is \(narBytes)")
+        for (key, value) in partial.parameters().flattened() where YuE2WeightPath.of(key: key) == .ar {
+            if value.dtype.isFloatingPoint { #expect(value.dtype == .float16, "\(key)") }
+        }
+
+        let unrestricted = try LMWeightLoader.load(directory: dir, config: tinyLMConfig(), residency: [.ar])
+        let before2 = MLX.Memory.activeMemory
+        unrestricted.applyPrecision(.fp16)
+        let everything = MLX.Memory.activeMemory - before2
+        #expect(everything > scoped, "the unrestricted cast should have materialized the parked branch")
+    }
 }
+

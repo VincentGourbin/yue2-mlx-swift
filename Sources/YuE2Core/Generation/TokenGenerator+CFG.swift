@@ -125,6 +125,12 @@ extension TokenGenerator {
         let globalIDsArray = MLXArray(head.globalIDs.map { Int32($0) })
 
         var currentLogits = combine(conditional: conditional, unconditional: unconditional, cfgScale: cfgScale)
+        // Opt-in compiled single-token step (dispatch-bound decode); nil keeps the plain path.
+        let stepper: CompiledDecodeStep? = YuE2ExecutionPolicy.compiledDecode ? CompiledDecodeStep(model: model) : nil
+        func decodeStep(_ tokenInput: MLXArray, _ stepCache: KVCache) -> MLXArray {
+            if let stepper { return stepper.forward(tokens: tokenInput, cache: stepCache) }
+            return model.model.forwardAR(tokens: tokenInput, cache: stepCache)
+        }
         var key = MLXRandom.key(seed)
         var history: [Int] = []
         var eos = false
@@ -150,12 +156,9 @@ extension TokenGenerator {
             var nextUnconditional: MLXArray?
             if !isLastStep {
                 let tokenInput = MLX.take(globalIDsArray, nextArray, axis: 0).reshaped([1, 1])
-                nextConditional = head.logits(hidden: model.model.forwardAR(tokens: tokenInput, cache: positiveCache))
-                    .reshaped([1, n])
+                nextConditional = head.logits(hidden: decodeStep(tokenInput, positiveCache)).reshaped([1, n])
                 if let negativeCache {
-                    nextUnconditional = head.logits(
-                        hidden: model.model.forwardAR(tokens: tokenInput, cache: negativeCache)
-                    ).reshaped([1, n])
+                    nextUnconditional = head.logits(hidden: decodeStep(tokenInput, negativeCache)).reshaped([1, n])
                 }
             }
 

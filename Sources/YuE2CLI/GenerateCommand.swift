@@ -52,9 +52,39 @@ struct GenerateCommand: AsyncParsableCommand {
     @Option(name: .long, help: "VAE decode backend (T-6.3): mlx (default), coreai-gpu, coreai-ane — Core AI falls back to MLX, loudly, on any failure.")
     var vaeBackend: VAEBackendKind = .mlx
 
+    @Option(name: .long, help: "NAR projections during the solve: packed (quantizedMatmul, default) or dequantized (bf16 GEMM, +1.4 GB for an 8-bit NAR, faster on Mac).")
+    var narCompute: YuE2ExecutionPolicy.NARCompute?
+
+    @Flag(name: .long, help: "Compile the per-layer math of single-token AR steps (dispatch-bound decode).")
+    var compiledDecode: Bool = false
+
+    @Option(name: .long, help: "One of the six reference configurations (4bit-fast, 4bit-lean, 8bit-fast, 8bit-lean, 16bit-fast, 16bit-lean); sets quant, precision, NAR compute, VAE, residency and memory profile — `yue2 references` lists them.")
+    var reference: String?
+
     func run() async throws {
         let modelsDir = try resolveModelsDir(modelOptions.modelsDir)
         let request = try requestOptions.makeRequest()
+        var quant = modelOptions.quant
+        var quantHead = modelOptions.quantHead
+        var precision = modelOptions.precision
+        var vaePrecisionChoice = vaePrecision.vaePrecision
+        var vaeTile = vaeCoreFrames
+        var releaseFlag = releaseWeightsBetweenStages
+        var steps = odeSteps
+        if let reference {
+            guard let profile = YuE2ReferenceProfile.named(reference) else {
+                throw YuE2Error.invalidRequest("unknown reference profile \(reference); see `yue2 references`")
+            }
+            profile.applyGlobalPolicy()
+            quant = profile.quant
+            quantHead = profile.quantizeHead
+            precision = profile.precision
+            vaePrecisionChoice = profile.vaePrecision
+            vaeTile = profile.vaeCoreFrames
+            releaseFlag = profile.releaseWeightsBetweenStages
+            steps = odeSteps ?? profile.odeSteps
+            FileHandle.standardError.write(Data("reference \(profile.id): \(profile.summary)\n".utf8))
+        }
 
         let profilingSession: ProfilingSession? = profile ? ProfilingSession(config: .singleRun) : nil
         if let profilingSession {
@@ -66,28 +96,30 @@ struct GenerateCommand: AsyncParsableCommand {
 
         YuE2MemoryManager.configure(for: .ar)
         profilingSession?.beginPhase("1. Model Loading", category: .modelLoad)
-        let releaseWeights = releaseWeightsBetweenStages || YuE2MemoryManager.profile == .mobile
+        if let narCompute { YuE2ExecutionPolicy.narCompute = narCompute }
+        if compiledDecode { YuE2ExecutionPolicy.compiledDecode = true }
+        let releaseWeights = releaseFlag || (reference == nil && YuE2MemoryManager.profile == .mobile)
         let session = try await ModelSession.load(
-            modelsDir: modelsDir, quant: modelOptions.quant, quantizeHead: modelOptions.quantHead,
-            precision: modelOptions.precision, residency: releaseWeights ? [.ar] : .all)
+            modelsDir: modelsDir, quant: quant, quantizeHead: quantHead,
+            precision: precision, residency: releaseWeights ? [.ar] : .all)
         let vaeDirectory = modelsDir.appendingPathComponent(vae.model.directoryName)
         var vaeModel: any VAEDecoding
         do {
-            vaeModel = try await loadVAEBackend(vaeBackend, directory: vaeDirectory, precision: vaePrecision.vaePrecision)
+            vaeModel = try await loadVAEBackend(vaeBackend, directory: vaeDirectory, precision: vaePrecisionChoice)
         } catch {
             guard vaeBackend != .mlx else { throw error }
             FileHandle.standardError.write(Data("yue2 generate: \(vaeBackend) unavailable (\(error)), falling back to mlx\n".utf8))
-            vaeModel = try YuE2VAE.load(directory: vaeDirectory, precision: vaePrecision.vaePrecision)
+            vaeModel = try YuE2VAE.load(directory: vaeDirectory, precision: vaePrecisionChoice)
         }
         profilingSession?.endPhase("1. Model Loading", category: .modelLoad)
-        let config = try resolveConfig(session.config, odeSteps: odeSteps)
+        let config = try resolveConfig(session.config, odeSteps: steps)
         let abcSampling = try samplingOverrides.abcSampling(default: config.abc)
         let semanticSampling = try samplingOverrides.semanticSampling(default: config.semantic)
 
         var lastSemanticCount = 0
         let pipeline = YuE2Pipeline(
             session: session, vae: vaeModel, config: config,
-            vaeCoreFrames: vaeCoreFrames, releaseWeightsBetweenStages: releaseWeights)
+            vaeCoreFrames: vaeTile, releaseWeightsBetweenStages: releaseWeights)
         let result = try await pipeline.generate(
             request: request, abcSampling: abcSampling, semanticSampling: semanticSampling,
             profiling: profilingSession
