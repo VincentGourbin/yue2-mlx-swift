@@ -18,9 +18,10 @@ struct ReferencesCommand: ParsableCommand {
                     + (p.quantizeHead ? "+head" : "") + " precision=\(p.precision.rawValue)"
                     + " nar=\(p.narCompute.rawValue) compiled=\(p.compiledDecode) vae=\(p.vaePrecision == .fp16 ? "fp16" : "fp32")/\(p.vaeCoreFrames)"
                     + " residency=\(p.releaseWeightsBetweenStages ? "stage" : "all") memory=\(p.memoryProfile == .mobile ? "mobile" : "mac")"
-                    + " ode=\(p.odeSteps.map(String.init) ?? "32")")
+                    + " ode=\(p.odeSteps.map(String.init) ?? "32")"
+                    + (p.mobileLimitsMB.map { " cache=\($0.cache)MB threshold=\($0.limit)MB" } ?? ""))
             print("            \(p.summary)")
-            print("            weights: " + (p.pack.map { "yue2 download --model \($0.rawValue)  (\(YuE2Pack.repoID), \($0.approximateBytes / 1_000_000_000) GB)" } ?? "yue2 download --model lm  (m-a-p/YuE2-3B, bf16, 7.3 GB)"))
+            print("            weights: " + (p.pack.map { "yue2 download --model \($0.rawValue)  (\(YuE2Pack.repoID), \(String(format: "%.1f", Double($0.approximateBytes) / 1e9)) GB)" } ?? "yue2 download --model lm  (m-a-p/YuE2-3B, bf16, 7.3 GB)"))
         }
     }
 }

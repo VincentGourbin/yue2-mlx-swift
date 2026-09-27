@@ -2,11 +2,11 @@
 
 Swift / MLX port of **YuE2** (m-a-p, September 2026) for Apple Silicon: lyrics and style → editable ABC score → semantic tokens → acoustic latents by flow matching → 48 kHz stereo song. The whole pipeline runs locally on a Mac or an iPhone 15 Pro Max, with no Python at inference time.
 
-**Version 1.0.0**: six reference configurations, measured and reproducible, from 65.7 s for 70 s of audio (Mac, 4-bit) to a 3.4 GB peak (iPhone).
+**Version 1.2.0**: seven reference configurations, measured and reproducible, from 65.7 s for 70 s of audio (Mac, 4-bit) to a 2.6 GB peak (`4bit-tiny`), with their prequantized packs published on Hugging Face.
 
 | Documentation | |
 |---|---|
-| [The six reference configurations](docs/References.md) | which pack, which settings, for which machine |
+| [The reference configurations](docs/References.md) | which pack, which settings, for which machine |
 | [Benchmarks: method, results, reproduction](docs/Benchmarks.md) | protocol, Mac and iPhone tables, Core AI, how to contribute |
 | [Command line](docs/CLI.md) | every `yue2` command and option |
 | [Swift API](docs/API.md) | `ModelSession`, `YuE2Pipeline`, residency, checkpoints, GPU gate, VAE backends |
@@ -59,7 +59,7 @@ let vae = try await loadVAEBackend(.mlx, directory: dir.appendingPathComponent("
 let song = try await YuE2Pipeline(session: session, vae: vae, config: session.config).generate(request: request)
 ```
 
-## The six reference configurations
+## The reference configurations
 
 70 s of audio, 32 ODE steps, MacBook Pro M3 Max, idle GPU, 120 s cool-down ([details](docs/References.md)).
 
@@ -67,6 +67,7 @@ let song = try await YuE2Pipeline(session: session, vae: vae, config: session.co
 |---|---|---|---|---|
 | `4bit-fast` | int4-mixed-head, everything resident, NAR in bf16 | **65.7 s** | 8.9 GB | Mac: faster than real time |
 | `4bit-lean` | int4-mixed-head, stage-scoped residency, fp16, 256-frame tile | 77.7 s | **3.4 GB** | iPhone 15 Pro Max, 8 GB Macs |
+| `4bit-tiny` | as `4bit-lean`, 64-frame tile, 256 MB cache | 94.8 s | **2.6 GB** | the most constrained devices, same audio |
 | `8bit-fast` | qint8-all-head, everything resident, NAR in bf16 | 76.5 s | 9.9 GB | Mac, 8-bit AR path |
 | `8bit-lean` | qint8-all-head, residency, fp16, 256-frame tile | 79.3 s | 4.4 GB | iPhone with headroom, 8-16 GB Macs |
 | `16bit-fast` | bf16, everything resident | 84.9 s | 12.0 GB | quality reference |

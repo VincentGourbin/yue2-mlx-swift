@@ -68,7 +68,12 @@ public enum YuE2MemoryManager {
     /// (mlx's cache-GC threshold, not a hard cap) = available − 1.25 GB, never below 3 GB.
     /// `YUE2_CACHE_LIMIT_MB` / `YUE2_MEMORY_LIMIT_MB` override both (measurements). On macOS
     /// (profile forced to `.mobile`) "available" is taken as 6 GB, the iPhone 15 Pro Max figure.
+    /// Fixed mobile limits set by a reference profile (`4bit-tiny`), ahead of the environment
+    /// and the adaptive sizing; `nil` (default) keeps the adaptive behaviour.
+    nonisolated(unsafe) public static var mobileLimitsOverrideMB: (cache: Int, limit: Int)?
+
     static func mobileLimitsMB() -> (cache: Int, limit: Int) {
+        if let fixed = mobileLimitsOverrideMB { return fixed }
         let env = ProcessInfo.processInfo.environment
         #if os(iOS)
         let availableMB = Int(os_proc_available_memory() / (1024 * 1024))

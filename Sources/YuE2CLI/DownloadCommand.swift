@@ -35,7 +35,7 @@ struct DownloadCommand: AsyncParsableCommand {
                 print("\(model.rawValue) — \(model.license.name) (\(model.license.allowsCommercialUse ? "commercial use allowed" : "non-commercial only")): \(model.license.url)")
                 try await downloader.download(model, progress: report)
             case .pack(let pack):
-                print("\(YuE2Pack.repoID)/\(pack.rawValue) (\(pack.approximateBytes / 1_000_000_000) GB) — \(pack.license.name), derivative of m-a-p/YuE2-3B, non-commercial only: \(pack.license.url)")
+                print("\(YuE2Pack.repoID)/\(pack.rawValue) (\(String(format: "%.1f", Double(pack.approximateBytes) / 1e9)) GB) — \(pack.license.name), derivative of m-a-p/YuE2-3B, non-commercial only: \(pack.license.url)")
                 try await downloader.download(pack: pack, progress: report)
                 print("  verified: SHA-256 matches \(pack.rawValue)/model.safetensors.sha256")
             }

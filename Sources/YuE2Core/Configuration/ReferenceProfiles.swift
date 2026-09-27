@@ -11,7 +11,7 @@ import Foundation
 
 public struct YuE2ReferenceProfile: Sendable, Identifiable, Equatable {
     public enum Bits: String, CaseIterable, Sendable { case four = "4", eight = "8", sixteen = "16" }
-    public enum Kind: String, CaseIterable, Sendable { case fast, lean }
+    public enum Kind: String, CaseIterable, Sendable { case fast, lean, tiny }
 
     public let bits: Bits
     public let kind: Kind
@@ -27,7 +27,24 @@ public struct YuE2ReferenceProfile: Sendable, Identifiable, Equatable {
     public let memoryProfile: YuE2MemoryManager.Profile
     /// `nil` = the checkpoint's default (32 midpoint steps).
     public let odeSteps: Int?
+    /// Fixed MLX cache / GC-threshold (MB) on the mobile profile; `nil` = adaptive sizing.
+    public let mobileLimitsMB: (cache: Int, limit: Int)?
     public let summary: String
+
+    public init(
+        bits: Bits, kind: Kind, quant: YuE2Quantization, quantizeHead: Bool, precision: YuE2ComputePrecision,
+        narCompute: YuE2ExecutionPolicy.NARCompute, compiledDecode: Bool, vaePrecision: VAEPrecision,
+        vaeCoreFrames: Int, releaseWeightsBetweenStages: Bool, memoryProfile: YuE2MemoryManager.Profile,
+        odeSteps: Int?, mobileLimitsMB: (cache: Int, limit: Int)? = nil, summary: String
+    ) {
+        self.bits = bits; self.kind = kind; self.quant = quant; self.quantizeHead = quantizeHead
+        self.precision = precision; self.narCompute = narCompute; self.compiledDecode = compiledDecode
+        self.vaePrecision = vaePrecision; self.vaeCoreFrames = vaeCoreFrames
+        self.releaseWeightsBetweenStages = releaseWeightsBetweenStages; self.memoryProfile = memoryProfile
+        self.odeSteps = odeSteps; self.mobileLimitsMB = mobileLimitsMB; self.summary = summary
+    }
+
+    public static func == (a: YuE2ReferenceProfile, b: YuE2ReferenceProfile) -> Bool { a.id == b.id }
 
     public var id: String { "\(bits.rawValue)bit-\(kind.rawValue)" }
 
@@ -39,6 +56,7 @@ public struct YuE2ReferenceProfile: Sendable, Identifiable, Equatable {
     /// per-call ones (`quant`, `precision`, VAE, residency, ODE steps) are read by the caller.
     public func applyGlobalPolicy() {
         YuE2MemoryManager.profile = memoryProfile
+        YuE2MemoryManager.mobileLimitsOverrideMB = mobileLimitsMB
         YuE2ExecutionPolicy.narCompute = narCompute
         YuE2ExecutionPolicy.compiledDecode = compiledDecode
     }
@@ -58,6 +76,12 @@ public struct YuE2ReferenceProfile: Sendable, Identifiable, Equatable {
             narCompute: .packed, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 256,
             releaseWeightsBetweenStages: true, memoryProfile: .mobile, odeSteps: nil,
             summary: "int4-mixed-head pack, stage-scoped residency, packed NAR, fp16, VAE tile 256, mobile limits — the iPhone profile"),
+        YuE2ReferenceProfile(
+            bits: .four, kind: .tiny, quant: .int4Mixed, quantizeHead: true, precision: .fp16,
+            narCompute: .packed, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 64,
+            releaseWeightsBetweenStages: true, memoryProfile: .mobile, odeSteps: nil,
+            mobileLimitsMB: (cache: 256, limit: 3072),
+            summary: "int4-mixed-head pack, 4bit-lean plus a 64-frame VAE tile and a 256 MB cache: ≈ 2.6 GB peak for +29 % time, same audio — the most constrained devices"),
         YuE2ReferenceProfile(
             bits: .eight, kind: .fast, quant: .qint8All, quantizeHead: true, precision: .bf16,
             narCompute: .dequantized, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 1024,

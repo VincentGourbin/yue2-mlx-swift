@@ -1,4 +1,4 @@
-# The six reference configurations
+# The seven reference configurations
 
 `yue2 references` lists them, `yue2 generate --reference <id>` applies one, `YuE2ReferenceProfile.all` exposes them to an app. Each one pins **every** setting that matters: weight pack, compute precision, how the NAR is computed, VAE decoder, weight residency, memory profile, ODE steps. Nothing is left to chance between two machines: a reference produces the same song for the same seed, and comparable time on comparable hardware.
 
@@ -12,10 +12,13 @@ Source: `Sources/YuE2Core/Configuration/ReferenceProfiles.swift`. Measurements: 
 |---|---|---|---|---|---|
 | `4bit-fast` | `int4-mixed-head` (2.5 GB) | everything resident, NAR dequantized to bf16, VAE fp16 tile 1024, Mac caches | **65.7 s** | 8.9 GB | Mac: the only profile faster than real time at 32 steps |
 | `4bit-lean` | `int4-mixed-head` | stage-scoped residency, packed NAR, fp16, VAE fp16 tile 256, mobile limits | 77.7 s | **3.4 GB** | iPhone 15 Pro Max and any 8 GB Mac |
+| `4bit-tiny` | `int4-mixed-head` | `4bit-lean` plus a 64-frame VAE tile and a fixed 256 MB cache / 3 GB threshold | 94.8 s | **2.6 GB** | the most constrained devices; same audio as `4bit-lean` |
 | `8bit-fast` | `qint8-all-head` (3.5 GB) | everything resident, NAR dequantized to bf16, VAE fp16/1024 | 76.5 s | 9.9 GB | Mac, when the AR path must stay 8-bit |
 | `8bit-lean` | `qint8-all-head` | residency, packed NAR, fp16, VAE fp16/256, mobile limits | 79.3 s | 4.4 GB | iPhone 8 GB with headroom, 8-16 GB Macs |
 | `16bit-fast` | bf16 (7.3 GB) | everything resident, VAE fp16/1024 | 84.9 s | 12.0 GB | quality reference |
 | `16bit-lean` | bf16 | stage-scoped residency, VAE fp16/256, Mac caches | 84.9 s | 6.9 GB | 16-24 GB Macs |
+
+`4bit-tiny` is the answer to "even less memory": the 8-bit NAR (1.43 GB) dominates every quantized pack, so lower AR bits buy little (3-bit: −0.2 GB, at the limit by ear; 2-bit: −0.4 GB, no longer music) while a smaller VAE tile and a smaller cache buy 0.8 GB at no quality cost, for +29 % time.
 
 Quick read: 4-bit is fastest because the autoregressive phases (score, then semantic tokens) are bound by memory bandwidth and dispatch; the NAR, 8-bit in both quantized packs, costs ≈ 50 s whatever the profile and is three quarters of the time. The lean profiles divide memory by two to three for no time cost (8-bit) to 18 % (4-bit, due to the packed NAR rather than to residency).
 
@@ -29,6 +32,7 @@ Quick read: 4-bit is fastest because the autoregressive phases (score, then sema
 | `vaePrecision`, `vaeCoreFrames` | fp16 · fp32; 256 · 1024 | The Oobleck decoder in fp16 is inaudible against fp32 (SNR 53-57 dB) and faster. The tile sets the transient decode peak: 1024 ≈ 2.9 GB active in fp16, 256 ≈ 2.0 GB. |
 | `releaseWeightsBetweenStages` | bool | Stage-scoped residency: AR path alone at load, AR → NAR swap once the prefix cache is ready, whole LM released before the VAE. The memory budget becomes the largest stage instead of the sum. Zero time cost (measured A/B/B/A). |
 | `memoryProfile` | `mac` · `mobile` | MLX caches per stage (Mac: 2 / 4 / 1 GB) or limits sized from available memory (mobile: cache ≈ 1 GB, GC threshold = available − 1.25 GB). Mobile limits thrash a bf16 working set: `16bit-lean` stays on `mac`. |
+| `mobileLimitsMB` | nil · (256, 3072) | Fixed MLX cache and GC threshold on the mobile profile instead of the adaptive sizing (`4bit-tiny`). |
 | `odeSteps` | nil = 32 | Midpoint solver steps (2 evaluations each). 24 steps bring 8-bit under 70 s, 16 steps bring everything under 45 s; listening validation in progress. |
 
 ## Choosing
@@ -36,6 +40,7 @@ Quick read: 4-bit is fastest because the autoregressive phases (score, then sema
 - **Mac, 32 GB and up**: `4bit-fast`. If you want the AR path in 8 bits: `8bit-fast`. For a quality reference: `16bit-fast`.
 - **Mac, 16-24 GB**: `16bit-lean` (6.9 GB), or `8bit-lean` / `4bit-lean` when other apps are running.
 - **8 GB Mac, iPhone**: `4bit-lean` (3.4 GB). `8bit-lean` also fits (4.4 GB) on an iPhone 15 Pro Max with the increased-memory entitlement.
+- **Less than that** (6 GB phones, iPads without the entitlement, a busy 8 GB Mac): `4bit-tiny` (2.6 GB, +29 % time, same audio).
 - **Even faster, memory no object**: outside the six, `--quant int4 --quant-head` (4-bit AR path, bf16 NAR, `int4-head` pack, 4.4 GB) gives 66-69 s; it is the candidate for a seventh profile.
 
 ## Adding or changing a profile
