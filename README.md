@@ -1,6 +1,12 @@
 # yue2-mlx-swift
 
+[![Website](https://img.shields.io/badge/vinceforge.com-PocketAnthem-blue)](https://vinceforge.com) [![Featured in awesome-YuE](https://img.shields.io/badge/featured_in-awesome--YuE-orange)](https://github.com/RevolutionLA/awesome-YuE) [![Release](https://img.shields.io/github/v/release/VincentGourbin/yue2-mlx-swift)](https://github.com/VincentGourbin/yue2-mlx-swift/releases) [![License: MIT](https://img.shields.io/badge/code-MIT-green)](LICENSE)
+
+<a href="https://www.buymeacoffee.com/fluxforgestudio"><img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=&slug=fluxforgestudio&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff" /></a>
+
 Swift / MLX port of **YuE2** (m-a-p, September 2026) for Apple Silicon: lyrics and style → editable ABC score → semantic tokens → acoustic latents by flow matching → 48 kHz stereo song. The whole pipeline runs locally on a Mac or an iPhone 15 Pro Max, with no Python at inference time.
+
+This engine powers **PocketAnthem**, the iPhone app featured on [vinceforge.com](https://vinceforge.com). Listed in [awesome-YuE](https://github.com/RevolutionLA/awesome-YuE), the curated YuE / YuE2 ecosystem list.
 
 **Version 1.2.0**: seven reference configurations, measured and reproducible, from 65.7 s for 70 s of audio (Mac, 4-bit) to a 2.6 GB peak (`4bit-tiny`), with their prequantized packs published on Hugging Face.
 
