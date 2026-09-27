@@ -66,7 +66,7 @@ One pass (traces `.local-runs/bench.noindex/ref-20260926-2300-*`). The A/B/B/A c
 | int2-mixed | 2.0 GB | 84.0 s | 2 969 MB | 0.072 / 0.068 | 60 bars: diverged on the same seed |
 | int4-mixed, 256 MB cache, 3 GB threshold | 2.5 GB | 94.8 s | **2 580 MB** | as 4-bit | unchanged |
 
-The NAR (8-bit, 1.43 GB) dominates the packs, so lower AR bits buy 0.2-0.4 GB at most; the VAE tile and the cache limit buy more (−0.8 GB for +29 % time) with no quality change. No 2-bit profile; 3-bit only after listening.
+The NAR (8-bit, 1.43 GB) dominates the packs, so lower AR bits buy 0.2-0.4 GB at most; the VAE tile and the cache limit buy more (−0.8 GB for +29 % time) with no quality change — that is `4bit-tiny`. By ear (author, 27 September): 2-bit is "no longer music", 3-bit is at the limit and roughly equivalent to 4-bit. Hear the limit yourself: `limit_4bit`, `limit_3bit` and `limit_2bit` (same seed, same song) are attached to the [v1.2.0 release](https://github.com/VincentGourbin/yue2-mlx-swift/releases/tag/v1.2.0). No low-bit profile.
 
 ### AR phases: dispatch-bound, not compute-bound
 

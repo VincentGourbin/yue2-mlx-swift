@@ -5,7 +5,7 @@ Published versions are squashed commits on `main` (the working history stays loc
 ## 1.2.0 — 2026-09-27
 
 - **`4bit-tiny` reference profile** for the most constrained devices: `4bit-lean` plus a 64-frame VAE tile and a fixed 256 MB cache / 3 GB threshold (`YuE2ReferenceProfile.mobileLimitsMB`, `YuE2MemoryManager.mobileLimitsOverrideMB`): 2.6 GB peak instead of 3.4, +29 % time, same audio. Seven profiles.
-- 2-bit and 3-bit AR presets (`int2-mixed`, `int3-mixed`) measured and documented, not adopted: the 8-bit NAR dominates the packs (−0.2 / −0.4 GB only), 2-bit is no longer music by ear, 3-bit at the limit.
+- 2-bit and 3-bit AR presets (`int2-mixed`, `int3-mixed`) measured and documented, not adopted: the 8-bit NAR dominates the packs (−0.2 / −0.4 GB only), 2-bit is no longer music by ear, 3-bit at the limit; the three renders are attached to the release (`limit_{4,3,2}bit_*.m4a`).
 
 ## 1.1.0 — 2026-09-27
 
