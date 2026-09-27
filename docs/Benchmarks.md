@@ -1,110 +1,110 @@
-# Benchmarks : méthode, résultats, reproduction
+# Benchmarks: method, results, reproduction
 
-Ce document est le guide de lecture. Les lignes brutes vivent dans [`BENCHMARKS.md`](../BENCHMARKS.md) (une ligne par run, jamais modifiée), les analyses datées dans [`docs/knowledge/benchmarks/`](knowledge/benchmarks/) et le journal dans [`docs/knowledge/log.md`](knowledge/log.md).
+This is the reading guide. Raw rows live in [`BENCHMARKS.md`](../BENCHMARKS.md) (one line per run, never edited), dated analyses in [`docs/knowledge/benchmarks/`](knowledge/benchmarks/) and the journal in [`docs/knowledge/log.md`](knowledge/log.md) (both in French).
 
-## 1. Ce qu'on mesure, et avec quoi
+## 1. What is measured, and with what
 
-- **Temps** par phase (partition ABC, tokens sémantiques, NAR, VAE) et total hors chargement, tels que `yue2 generate --profile` les imprime (`generated … in X s (abc / semantic / nar / vae)`).
-- **Mémoire** : pic de footprint process (`phys_footprint`, le chiffre que juge jetsam sur iOS) et pic de mémoire MLX active, par phase, depuis la trace Chrome (`trace.json`) écrite par `swift-mlx-profiler`. Sur les commandes unitaires (`decode`, `bench-coreai-nar`), les lignes `DECODE …` / `BENCH …` portent les mêmes chiffres (`FootprintSampler`, 5 ms).
-- **Occupation CPU / GPU** par phase, dans la même trace (compteur `Utilization`).
-- Jamais de `print` chronométré à la main.
+- **Time** per phase (ABC score, semantic tokens, NAR, VAE) and total excluding load, as printed by `yue2 generate --profile` (`generated … in X s (abc / semantic / nar / vae)`).
+- **Memory**: peak process footprint (`phys_footprint`, the number iOS jetsam judges) and peak MLX active memory, per phase, from the Chrome trace (`trace.json`) written by `swift-mlx-profiler`. Unit commands (`decode`, `bench-coreai-nar`) print the same figures on their `DECODE …` / `BENCH …` lines (`FootprintSampler`, 5 ms).
+- **CPU / GPU utilization** per phase, in the same trace (`Utilization` counter).
+- Never a hand-timed `print`.
 
-## 2. Le protocole (CLAUDE.md, « Performance work »)
+## 2. The protocol (CLAUDE.md, "Performance work")
 
-L'état d'horloge du GPU déplace un résultat jusqu'à 10×. Une mesure de temps n'est valable que si :
+GPU clock state moves a result by up to 10×. A timing is only valid if:
 
-1. **GPU libre** : `pgrep -fl "serve|train|lora"` avant chaque point. Un entraînement LoRA tiers a multiplié par trois toute une journée de mesures (26 septembre) sans qu'aucun chiffre ne paraisse absurde isolément.
-2. **Refroidissement** : 120 s avant chaque point (60 s pour une phase seule).
-3. **A/B/B/A** avec contrôle : deux runs de chaque configuration, ordre A B B A ; on ne lit un écart que s'il dépasse la dispersion des deux A (≤ 3 % sur GPU libre).
-4. **Pack pré-quantifié déjà exporté** : la première utilisation d'un preset quantifié charge 7,3 Go de bf16, quantifie et exporte (`mlx-prequantized/<preset>[-head]/`) — un run à jeter.
-5. **Sorties dans `.local-runs/bench.noindex/`** : Spotlight indexe les WAV et npy fraîchement écrits (`corespotlightd` : 207 min de CPU cumulé sur la machine de référence) et vole le cœur dont dépendent les phases AR ; le suffixe `.noindex` l'arrête. `mediaanalysisd`, Time Machine (`backupd`) et WindowServer restent des perturbateurs occasionnels : le script journalise le processus le plus gourmand avant chaque point, un run hors bande est refait, jamais interprété.
+1. **Idle GPU**: `pgrep -fl "serve|train|lora"` before every point. A third-party LoRA training tripled a whole day of measurements (26 September) without any single number looking absurd on its own.
+2. **Cool-down**: 120 s before each point (60 s for a single phase).
+3. **A/B/B/A with a control**: two runs of each configuration, order A B B A; a difference is only read if it exceeds the spread of the two A runs (≤ 3 % on an idle GPU).
+4. **Prequantized pack already exported**: the first use of a quantized preset loads 7.3 GB of bf16, quantizes and exports (`mlx-prequantized/<preset>[-head]/`) — a run to discard.
+5. **Outputs under `.local-runs/bench.noindex/`**: Spotlight indexes freshly written WAV and npy files (`corespotlightd`: 207 minutes of CPU on the reference machine) and steals the core the AR phases depend on; the `.noindex` suffix stops it. `mediaanalysisd`, Time Machine (`backupd`) and WindowServer remain occasional disturbers: the script logs the busiest process before every point; an out-of-band run is redone, never interpreted.
 
-`Scripts/bench-references.sh` applique tout cela aux six références ; `Scripts/bench-song.sh` fait l'A/B/B/A sur une chanson courte.
+`Scripts/bench-references.sh` applies all of this to the six references; `Scripts/bench-song.sh` does the A/B/B/A on a short song.
 
-## 3. Résultats de référence (M3 Max 96 Go, macOS 27, mlx-swift 0.31.6)
+## 3. Reference results (M3 Max 96 GB, macOS 27, mlx-swift 0.31.6)
 
-### Les six configurations, chanson de 70 s, 32 pas
+### The six configurations, 70 s song, 32 steps
 
-| Id | Total | abc / sémantique / NAR / VAE | Pic process | Pic par phase (plan / sém. / NAR / VAE) |
+| Id | Total | abc / semantic / NAR / VAE | Peak process | Peak per phase (plan / sem. / NAR / VAE) |
 |---|---|---|---|---|
-| `4bit-fast` | **65,7 s** | 2,7 / 10,7 / 51,1 / 1,1 | 8,9 Go | 4,2 / 5,3 / 8,5 / 8,9 |
-| `4bit-lean` | 77,7 s | 4,2 / 10,8 / 61,5 / 1,2 | **3,4 Go** | 2,8 / 3,4 / 2,8 / 3,4 |
-| `8bit-fast` | 76,5 s | 5,8 / 15,5 / 54,0 / 1,1 | 9,9 Go | 5,3 / 6,4 / 9,6 / 9,9 |
-| `8bit-lean` | 79,3 s | 5,6 / 15,3 / 57,1 / 1,1 | 4,4 Go | 4,0 / 4,4 / 3,8 / 3,4 |
-| `16bit-fast` | 84,9 s | 8,7 / 23,8 / 51,3 / 1,1 | 12,0 Go | 8,8 / 9,7 / 10,3 / 12,0 |
-| `16bit-lean` | 84,9 s | 8,4 / 23,1 / 52,2 / 1,2 | 6,9 Go | 6,0 / 6,9 / 6,9 / 3,5 |
+| `4bit-fast` | **65.7 s** | 2.7 / 10.7 / 51.1 / 1.1 | 8.9 GB | 4.2 / 5.3 / 8.5 / 8.9 |
+| `4bit-lean` | 77.7 s | 4.2 / 10.8 / 61.5 / 1.2 | **3.4 GB** | 2.8 / 3.4 / 2.8 / 3.4 |
+| `8bit-fast` | 76.5 s | 5.8 / 15.5 / 54.0 / 1.1 | 9.9 GB | 5.3 / 6.4 / 9.6 / 9.9 |
+| `8bit-lean` | 79.3 s | 5.6 / 15.3 / 57.1 / 1.1 | 4.4 GB | 4.0 / 4.4 / 3.8 / 3.4 |
+| `16bit-fast` | 84.9 s | 8.7 / 23.8 / 51.3 / 1.1 | 12.0 GB | 8.8 / 9.7 / 10.3 / 12.0 |
+| `16bit-lean` | 84.9 s | 8.4 / 23.1 / 52.2 / 1.2 | 6.9 GB | 6.0 / 6.9 / 6.9 / 3.5 |
 
-Un passage (traces `.local-runs/bench.noindex/ref-20260926-2300-*`). Les contrôles A/B/B/A de la même soirée sur les mêmes packs tiennent à ±3 %.
+One pass (traces `.local-runs/bench.noindex/ref-20260926-2300-*`). The A/B/B/A controls of the same evening on the same packs hold within ±3 %.
 
-### Bits × mode, A/B/B/A sur GPU libre (même chanson, 32 pas)
+### Bits × mode, A/B/B/A on an idle GPU (same song, 32 steps)
 
-| Pack | MLX pur (2 runs) | Optimisé mobile (2 runs) | Pic pur → optimisé |
+| Pack | Plain MLX (2 runs) | Optimized, mobile (2 runs) | Peak plain → optimized |
 |---|---|---|---|
-| bf16 | 89,4 / 87,2 s | 98,2 / 134,7 s | 14,8 → 5,2 Go |
-| 8 bits intégral | 83,5 / 86,2 s | 84,9 / 85,6 s | 11,5 → 4,3 Go |
-| 4 bits `int4-mixed-head` | 76,6 / 79,0 s | 76,6 / 109,5 s | 10,4 → 3,3-3,5 Go |
+| bf16 | 89.4 / 87.2 s | 98.2 / 134.7 s | 14.8 → 5.2 GB |
+| 8-bit throughout | 83.5 / 86.2 s | 84.9 / 85.6 s | 11.5 → 4.3 GB |
+| 4-bit `int4-mixed-head` | 76.6 / 79.0 s | 76.6 / 109.5 s | 10.4 → 3.3-3.5 GB |
 
-« Optimisé » = résidence par étape + VAE fp16/256 + limites mobiles adaptatives. En 8 et 4 bits la résidence ne coûte rien ; les deux runs hors bande (bf16 134,7 s : récupération du cache au seuil, working set 4,3 Go ; 4 bits 109,5 s : état GPU ponctuel, trace sans anomalie, contrôle suivant à 79 s) sont documentés dans `docs/knowledge/benchmarks/mac-70s-quant-comparison-2026-09-26.md`.
+"Optimized" = stage-scoped residency + VAE fp16/256 + adaptive mobile limits. In 8-bit and 4-bit, residency costs nothing; the two out-of-band runs (bf16 134.7 s: cache reclaim at the threshold, 4.3 GB working set; 4-bit 109.5 s: transient GPU state, trace without anomaly, next control back at 79 s) are documented in `docs/knowledge/benchmarks/mac-70s-quant-comparison-2026-09-26.md`.
 
-### Pas d'ODE (levier ÷ 2 sur le NAR, qualité à valider)
+### ODE steps (÷ 2 lever on the NAR, quality still to validate)
 
-| Configuration | 32 pas | 24 pas | 20 pas | 16 pas |
+| Configuration | 32 steps | 24 steps | 20 steps | 16 steps |
 |---|---|---|---|---|
-| AR 4 bits + NAR bf16 (`--quant int4 --quant-head`) | 66,1-69,3 s | 55,3 s | — | 43,9 s |
-| 8 bits, NAR dé-quantifié | 75,4-76,5 s | 67,3 s | — | — |
-| 8 bits, NAR packé | 83,5-86,2 s | — | 64,4 s | — |
+| 4-bit AR + bf16 NAR (`--quant int4 --quant-head`) | 66.1-69.3 s | 55.3 s | — | 43.9 s |
+| 8-bit, dequantized NAR | 75.4-76.5 s | 67.3 s | — | — |
+| 8-bit, packed NAR | 83.5-86.2 s | — | 64.4 s | — |
 
-### Phases AR : bornées par le dispatch, pas par le calcul
+### AR phases: dispatch-bound, not compute-bound
 
-Traces propres (21 septembre) : phase plan à 54-62 % d'un cœur et 68-78 % de GPU, phase sémantique à 96 % d'un cœur et 72-79 % de GPU, NAR à 2 % de CPU et 79 % de GPU. Phase sémantique seule (8 bits, 600 tokens) : 114 tok/s là où la bande passante permettrait ≈ 270. Le cache KV préalloué (v1.0.0) a ramené le CPU à 2,2 s user + 0,9 s sys pour 6 s réels ; le pas de décodage compilé n'a rien apporté (103-113 tok/s contre 114-115) et n'est activé nulle part.
+Clean traces (21 September): plan phase at 54-62 % of one core and 68-78 % GPU, semantic phase at 96 % of one core and 72-79 % GPU, NAR at 2 % CPU and 79 % GPU. Semantic phase alone (8-bit, 600 tokens): 114 tok/s where memory bandwidth would allow ≈ 270. The preallocated KV cache (v1.0.0) brought CPU down to 2.2 s user + 0.9 s sys for 6 s of wall time; the compiled decode step brought nothing (103-113 tok/s against 114-115) and is enabled nowhere.
 
-### iPhone 15 Pro Max (A17 Pro, 8 Go, iOS 27.0)
+### iPhone 15 Pro Max (A17 Pro, 8 GB, iOS 27.0)
 
-Pack `int4-mixed-head`, fp16, résidence par étape, profil mobile (`docs/knowledge/benchmarks/iphone-15-pro-max-2026-09-22.md`) :
+`int4-mixed-head` pack, fp16, stage-scoped residency, mobile profile (`docs/knowledge/benchmarks/iphone-15-pro-max-2026-09-22.md`):
 
-| Mesure | Valeur |
+| Measurement | Value |
 |---|---|
-| Chargement AR seul | 5,6 s, 3,0 Go de footprint (avant le correctif fp16 de v1.0.0 : ≈ 1,4 Go de trop) |
-| AR, 512 tokens | 25 tok/s, TTFT 0,3 s |
-| NAR MLX, ms par évaluation (256 / 512 / 1 024 / 1 536 frames) | 665 / 1 294 / 2 776 / 6 516 (le dernier throttlé) |
-| Throttling | `thermalState` passe à `fair` après ≈ 60 s de GPU soutenu, NAR −31 à −46 % ; `serious` sur une chanson de 60 s |
-| VAE 1 024 frames | MLX fp16/256 : 6,0 s, pic 2,2 Go ; Core AI GPU : 5,4 s, pic 2,1 Go |
-| Chanson de 30 s | 273 s, pic 3,6 Go (phase plan ; attendu ≈ 2,2-2,4 Go avec v1.0.0) |
-| Chanson de 60 s (app) | ≈ 12,7 min, NAR 645 s en `serious` avec pacing, 3,5 Go |
-| NAR Core AI GPU | 5-7× plus lent que MLX (4,4 s par évaluation à 256 frames) |
+| AR-only load | 5.6 s, 3.0 GB footprint (before v1.0.0's fp16 fix: ≈ 1.4 GB too much) |
+| AR, 512 tokens | 25 tok/s, TTFT 0.3 s |
+| NAR MLX, ms per evaluation (256 / 512 / 1 024 / 1 536 frames) | 665 / 1 294 / 2 776 / 6 516 (the last one throttled) |
+| Throttling | `thermalState` reaches `fair` after ≈ 60 s of sustained GPU, NAR −31 to −46 %; `serious` on a 60 s song |
+| VAE, 1 024 frames | MLX fp16/256: 6.0 s, 2.2 GB peak; Core AI GPU: 5.4 s, 2.1 GB peak |
+| 30 s song | 273 s, 3.6 GB peak (plan phase; expected ≈ 2.2-2.4 GB with v1.0.0) |
+| 60 s song (app) | ≈ 12.7 min, NAR 645 s under `serious` with pacing, 3.5 GB |
+| NAR Core AI GPU | 5-7× slower than MLX (4.4 s per evaluation at 256 frames) |
 
 ### Core AI (macOS 27, `coreai-torch` 0.4.2)
 
-| Composant | Verdict | Chiffres |
+| Component | Verdict | Numbers |
 |---|---|---|
-| Décodeur VAE, GPU | **valide** | parité 54,7 dB tuilé (fenêtres à forme exacte), 1,04-1,07 s pour 64 s, footprint 2,0-2,1 Go quelle que soit la tuile |
-| Décodeur VAE, Neural Engine | impasse | 2-17 dB, repli silencieux des convolutions transposées |
-| Pile NAR, GPU | scénario « mémoire contrainte » seulement | 5-7× plus lent que MLX, ≈ 0,9 Go de moins sur l'étape NAR, paliers ≤ 1 536 frames |
-| Pile NAR, Neural Engine | crash | `dequantize` non supporté |
+| VAE decoder, GPU | **valid** | tiled parity 54.7 dB (exact-shape windows), 1.04-1.07 s for 64 s, 2.0-2.1 GB footprint whatever the tile |
+| VAE decoder, Neural Engine | dead end | 2-17 dB, silent fallback of the transposed convolutions |
+| NAR stack, GPU | "memory-constrained" scenario only | 5-7× slower than MLX, ≈ 0.9 GB less on the NAR stage, buckets ≤ 1 536 frames |
+| NAR stack, Neural Engine | crash | `dequantize` unsupported |
 
-## 4. Reproduire
+## 4. Reproducing
 
 ```bash
 export YUE2_MODELS_DIR=$HOME/Library/Caches/models
 xcodebuild -scheme yue2 -configuration Release -derivedDataPath .xcodebuild build
 
-# les six références, deux passes, chanson de 70 s
+# the six references, two passes, 70 s song
 Scripts/bench-references.sh reference/yue/examples/song.json 1750 2
 
-# une configuration à la main, profilée
+# one configuration by hand, profiled
 .xcodebuild/Build/Products/Release/yue2 generate --request reference/yue/examples/song.json \
   --semantic-min-tokens 1750 --semantic-max-tokens 1750 --reference 4bit-fast --profile \
   --out .local-runs/bench.noindex/my-run
 
-# le NAR seul, MLX contre Core AI
+# the NAR alone, MLX against Core AI
 .xcodebuild/Build/Products/Release/yue2 bench-coreai-nar --frames 256,1024 --backends mlx,coreai-gpu --quant int4-mixed
 
-# le VAE seul, avec footprint
+# the VAE alone, with footprint
 .xcodebuild/Build/Products/Release/yue2 decode --latents run/latent.npy --out out.wav --precision fp16 --core-frames 256
 ```
 
-Lire une trace : `trace.json` s'ouvre dans Perfetto ou `chrome://tracing` ; les compteurs `Memory` (MLX actif, cache, process) et `Utilization` (CPU du processus, GPU système) sont échantillonnés toutes les ≈ 20 ms, les phases sont des événements `B`/`E`. Le script Python qui a produit les tableaux ci-dessus tient en vingt lignes : sommer les compteurs entre les bornes de chaque phase.
+Reading a trace: `trace.json` opens in Perfetto or `chrome://tracing`; the `Memory` counters (MLX active, cache, process) and `Utilization` (process CPU, system GPU) are sampled every ≈ 20 ms, phases are `B`/`E` events. The Python script that produced the tables above is twenty lines: aggregate the counters between each phase's bounds.
 
-## 5. Contribuer une ligne
+## 5. Contributing a row
 
-Ajouter une ligne à `BENCHMARKS.md` (date, commit, configuration, chiffres copiés tels quels, chemin de la trace), jamais modifier une ligne existante. Un chiffre sans refroidissement, sans contrôle ou avec un processus GPU concurrent se marque « en session » et ne sert pas de référence.
+Add a line to `BENCHMARKS.md` (date, commit, configuration, figures copied verbatim, trace path), never edit an existing one. A number without cool-down, without a control, or with a competing GPU process is marked "in session" and is not a reference.

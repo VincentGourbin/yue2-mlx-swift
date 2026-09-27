@@ -48,31 +48,31 @@ public struct YuE2ReferenceProfile: Sendable, Identifiable, Equatable {
             bits: .four, kind: .fast, quant: .int4Mixed, quantizeHead: true, precision: .bf16,
             narCompute: .dequantized, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 1024,
             releaseWeightsBetweenStages: false, memoryProfile: .mac, odeSteps: nil,
-            summary: "pack int4-mixed-head (2,5 Go), tout résident, NAR dé-quantifié en bf16 pour le solve"),
+            summary: "int4-mixed-head pack (2.5 GB), everything resident, NAR dequantized to bf16 for the solve"),
         YuE2ReferenceProfile(
             bits: .four, kind: .lean, quant: .int4Mixed, quantizeHead: true, precision: .fp16,
             narCompute: .packed, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 256,
             releaseWeightsBetweenStages: true, memoryProfile: .mobile, odeSteps: nil,
-            summary: "pack int4-mixed-head, résidence par étape, NAR packé, fp16, tuile VAE 256, limites mobiles — le profil iPhone"),
+            summary: "int4-mixed-head pack, stage-scoped residency, packed NAR, fp16, VAE tile 256, mobile limits — the iPhone profile"),
         YuE2ReferenceProfile(
             bits: .eight, kind: .fast, quant: .qint8All, quantizeHead: true, precision: .bf16,
             narCompute: .dequantized, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 1024,
             releaseWeightsBetweenStages: false, memoryProfile: .mac, odeSteps: nil,
-            summary: "pack qint8-all-head (3,7 Go), tout résident, NAR dé-quantifié en bf16"),
+            summary: "qint8-all-head pack (3.7 GB), everything resident, NAR dequantized to bf16"),
         YuE2ReferenceProfile(
             bits: .eight, kind: .lean, quant: .qint8All, quantizeHead: true, precision: .fp16,
             narCompute: .packed, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 256,
             releaseWeightsBetweenStages: true, memoryProfile: .mobile, odeSteps: nil,
-            summary: "pack qint8-all-head, résidence par étape, NAR packé, fp16, tuile VAE 256, limites mobiles"),
+            summary: "qint8-all-head pack, stage-scoped residency, packed NAR, fp16, VAE tile 256, mobile limits"),
         YuE2ReferenceProfile(
             bits: .sixteen, kind: .fast, quant: .none, quantizeHead: false, precision: .bf16,
             narCompute: .packed, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 1024,
             releaseWeightsBetweenStages: false, memoryProfile: .mac, odeSteps: nil,
-            summary: "checkpoint bf16 (7,3 Go), tout résident, caches Mac"),
+            summary: "bf16 checkpoint (7.3 GB), everything resident, Mac caches"),
         YuE2ReferenceProfile(
             bits: .sixteen, kind: .lean, quant: .none, quantizeHead: false, precision: .bf16,
             narCompute: .packed, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 256,
             releaseWeightsBetweenStages: true, memoryProfile: .mac, odeSteps: nil,
-            summary: "checkpoint bf16, résidence par étape, tuile VAE 256 — caches Mac (les limites mobiles font thrasher un working set bf16)"),
+            summary: "bf16 checkpoint, stage-scoped residency, VAE tile 256 — Mac caches (mobile limits thrash a bf16 working set)"),
     ]
 }

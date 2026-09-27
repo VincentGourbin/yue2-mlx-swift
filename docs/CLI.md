@@ -1,26 +1,26 @@
-# Ligne de commande `yue2`
+# `yue2` command line
 
-Binaire produit par `xcodebuild -scheme yue2 -configuration Release -derivedDataPath .xcodebuild build` (jamais `swift build` pour un binaire : la `default.metallib` de MLX ne serait pas trouvée). `yue2 <commande> --help` donne toujours la liste complète des options.
+Binary produced by `xcodebuild -scheme yue2 -configuration Release -derivedDataPath .xcodebuild build` (never `swift build` for a binary: MLX's `default.metallib` would not be found). `yue2 <command> --help` always prints the full option list.
 
-## Commandes
+## Commands
 
-| Commande | Rôle |
+| Command | Role |
 |---|---|
-| `info` | version et état des checkpoints |
-| `download` | télécharge LM et/ou VAE depuis Hugging Face |
-| `generate` | chanson complète : partition ABC → tokens sémantiques → NAR → VAE |
-| `plan` | la partition ABC seule (étape 1, reprenable) |
-| `semantic` | les tokens sémantiques depuis un plan sauvé (étape 2) |
-| `synthesize` | NAR + VAE depuis plan et tokens sauvés (étapes 3-4), avec checkpoint par pas |
-| `decode` | latents `.npy` → WAV (VAE seul, MLX ou Core AI) |
-| `encode` | audio → latents (encodeur VAE), option aller-retour |
-| `references` | liste les six configurations de référence |
-| `parity vae|lm|nar` | parité numérique contre les dumps PyTorch |
-| `profile plan|semantic` | profil d'une phase AR (TTFT, tok/s, mémoire, trace) |
-| `bench-coreai-nar` | NAR MLX contre Core AI GPU/ANE, temps et footprint |
-| `remix-experimental` | réécriture SDEdit d'un latent encodé (non validé) |
+| `info` | version and checkpoint status |
+| `download` | downloads the LM and/or VAE from Hugging Face |
+| `generate` | full song: ABC score → semantic tokens → NAR → VAE |
+| `plan` | the ABC score alone (stage 1, resumable) |
+| `semantic` | semantic tokens from a saved plan (stage 2) |
+| `synthesize` | NAR + VAE from saved plan and tokens (stages 3-4), with per-step checkpoints |
+| `decode` | latents `.npy` → WAV (VAE alone, MLX or Core AI) |
+| `encode` | audio → latents (VAE encoder), optional round trip |
+| `references` | lists the six reference configurations |
+| `parity vae|lm|nar` | numerical parity against the PyTorch dumps |
+| `profile plan|semantic` | profile of one AR phase (TTFT, tok/s, memory, trace) |
+| `bench-coreai-nar` | NAR MLX against Core AI GPU/ANE, time and footprint |
+| `remix-experimental` | SDEdit rewrite of an encoded latent (unvalidated) |
 
-Variables d'environnement communes : `YUE2_MODELS_DIR` (checkpoints), `YUE2_MEMORY_PROFILE=mac|mobile`, `YUE2_CACHE_LIMIT_MB`, `YUE2_MEMORY_LIMIT_MB`, `YUE2_NAR_COMPUTE=packed|dequantized`, `YUE2_EVAL_PER_LAYER=1|0`, `YUE2_COMPILED_DECODE=1`, `YUE2_DEBUG=1` (journal sur stderr), `YUE2_DISABLE_COMPILE=1` (SnakeBeta non compilé), `YUE2_DISABLE_COREAI=1`.
+Common environment variables: `YUE2_MODELS_DIR` (checkpoints), `YUE2_MEMORY_PROFILE=mac|mobile`, `YUE2_CACHE_LIMIT_MB`, `YUE2_MEMORY_LIMIT_MB`, `YUE2_NAR_COMPUTE=packed|dequantized`, `YUE2_EVAL_PER_LAYER=1|0`, `YUE2_COMPILED_DECODE=1`, `YUE2_DEBUG=1` (log on stderr), `YUE2_DISABLE_COMPILE=1` (uncompiled SnakeBeta), `YUE2_DISABLE_COREAI=1`.
 
 ## `generate`
 
@@ -28,30 +28,30 @@ Variables d'environnement communes : `YUE2_MODELS_DIR` (checkpoints), `YUE2_MEMO
 yue2 generate --request song.json --reference 4bit-fast --out run/ [--profile]
 ```
 
-Le fichier de requête : `style`, `lyrics` (balises `[Verse]`, `[Chorus]`, `[Bridge]`, `[Outro]`), `cot` (`full`, `melody`, `off`), `seed`, `id`, `abc` optionnel (partition imposée), `cfg_scale` optionnel.
+The request file: `style`, `lyrics` (`[Verse]`, `[Chorus]`, `[Bridge]`, `[Outro]` tags), `cot` (`full`, `melody`, `off`), `seed`, `id`, optional `abc` (imposed score), optional `cfg_scale`.
 
-| Option | Défaut | Effet |
+| Option | Default | Effect |
 |---|---|---|
-| `--reference <id>` | — | applique une des six configurations ([References.md](References.md)) ; les options ci-dessous restent utilisables pour s'en écarter |
-| `--quant` | `none` | `none`, `qint8`, `int4` (voie AR seule), `qint8-all`, `int4-all`, `int4-mixed` (les deux voies) |
-| `--quant-head` | off | `lm_head` quantifié, calculé par `quantizedMatmul` sur les lignes de la phase |
-| `--precision` | `bf16` | `fp16` pour l'iPhone |
-| `--ode-steps` | 32 | pas du solveur midpoint |
-| `--vae-precision`, `--vae-core-frames` | `fp32`, 1024 (256 en profil mobile) | décodeur fp16 inaudible et plus rapide ; la tuile fixe le pic transitoire |
-| `--vae-backend` | `mlx` | `coreai-gpu` (parité 54,7 dB, macOS/iOS 27), `coreai-ane` (impasse aujourd'hui) ; repli MLX journalisé |
-| `--release-weights-between-stages` | off (on en profil mobile) | résidence par étape |
-| `--nar-compute` | `packed` | `dequantized` : NAR en bf16 pour le solve, +1,4 Go, ≈ 10 % plus rapide sur Mac |
-| `--compiled-decode` | off | pas de décodage compilé (mesuré sans gain, laissé en option) |
-| `--abc-max-tokens`, `--abc-min-tokens`, `--semantic-max-tokens`, `--semantic-min-tokens` | config du checkpoint | longueur des phases ; 25 tokens sémantiques = 1 s d'audio (1 750 = 70 s) |
-| `--temperature`, `--top-p`, `--top-k` | config du checkpoint | sampling des deux phases |
-| `--style`, `--lyrics`, `--cot`, `--seed`, `--abc-file`, `--cfg-scale`, `--id` | — | surchargent la requête |
-| `--vae` | `standard` | `legacy` pour l'ancien VAE |
+| `--reference <id>` | — | applies one of the six configurations ([References.md](References.md)); the options below still work to depart from it |
+| `--quant` | `none` | `none`, `qint8`, `int4` (AR path only), `qint8-all`, `int4-all`, `int4-mixed` (both paths) |
+| `--quant-head` | off | quantized `lm_head`, computed by `quantizedMatmul` on the phase's rows |
+| `--precision` | `bf16` | `fp16` for the iPhone |
+| `--ode-steps` | 32 | midpoint solver steps |
+| `--vae-precision`, `--vae-core-frames` | `fp32`, 1024 (256 on the mobile profile) | fp16 decoder is inaudible and faster; the tile sets the transient peak |
+| `--vae-backend` | `mlx` | `coreai-gpu` (54.7 dB parity, macOS/iOS 27), `coreai-ane` (dead end today); MLX fallback is logged |
+| `--release-weights-between-stages` | off (on with the mobile profile) | stage-scoped residency |
+| `--nar-compute` | `packed` | `dequantized`: NAR in bf16 for the solve, +1.4 GB, ≈ 10 % faster on Mac |
+| `--compiled-decode` | off | compiled decode step (measured without gain, kept as an option) |
+| `--abc-max-tokens`, `--abc-min-tokens`, `--semantic-max-tokens`, `--semantic-min-tokens` | checkpoint config | phase lengths; 25 semantic tokens = 1 s of audio (1 750 = 70 s) |
+| `--temperature`, `--top-p`, `--top-k` | checkpoint config | sampling for both phases |
+| `--style`, `--lyrics`, `--cot`, `--seed`, `--abc-file`, `--cfg-scale`, `--id` | — | override the request |
+| `--vae` | `standard` | `legacy` for the older VAE |
 | `--format` | `int16` | `float32` |
-| `--profile` | off | rapport par phase, métriques TTS, `trace.json` dans `--out` |
+| `--profile` | off | per-phase report, TTS metrics, `trace.json` in `--out` |
 
-Artefacts dans `--out` : `score.abc`, `abc_tokens.npy`, `prefix.npy`, `semantic.npy`, `latent.npy`, `audio.wav`, `plan.json`, `request.json`, `config.json`, `result.json` (temps et hachages), `trace.json` avec `--profile`.
+Artifacts in `--out`: `score.abc`, `abc_tokens.npy`, `prefix.npy`, `semantic.npy`, `latent.npy`, `audio.wav`, `plan.json`, `request.json`, `config.json`, `result.json` (times and hashes), `trace.json` with `--profile`.
 
-## Par étapes
+## Stage by stage
 
 ```bash
 yue2 plan       --request song.json --out run/plan
@@ -60,9 +60,9 @@ yue2 synthesize --plan run/plan --semantic run/song --out run/song --checkpoint-
 yue2 decode     --latents run/song/latent.npy --out run/song/audio.wav --precision fp16 --core-frames 256
 ```
 
-`synthesize --checkpoint-dir` écrit `nar-checkpoint.json` et `nar-state.npy` (192 Ko) après chaque pas d'ODE et les efface à la fin ; `--resume` repart du pas sauvegardé, bit-exact avec un solve ininterrompu (même plan, mêmes tokens, même graine, mêmes pas). C'est ce qui rend la perte du GPU (iOS en arrière-plan, crash) inoffensive : un pas perdu, pas l'étape.
+`synthesize --checkpoint-dir` writes `nar-checkpoint.json` and `nar-state.npy` (192 KB) after every ODE step and clears them at the end; `--resume` restarts from the saved step, bit-exact with an uninterrupted solve (same plan, tokens, seed and steps). This is what makes losing the GPU (iOS in the background, a crash) harmless: one step lost, not the stage.
 
-`decode` imprime une ligne `DECODE backend=… tiles=… padded_tiles=… seconds=… footprint_before_load_mb=… footprint_after_load_mb=… footprint_decode_peak_mb=… mlx_decode_peak_mb=…`.
+`decode` prints a line `DECODE backend=… tiles=… padded_tiles=… seconds=… footprint_before_load_mb=… footprint_after_load_mb=… footprint_decode_peak_mb=… mlx_decode_peak_mb=…`.
 
 ## `download`, `info`
 
@@ -71,14 +71,14 @@ yue2 download --models-dir $YUE2_MODELS_DIR            # lm,vae ; --model lm,vae
 yue2 info
 ```
 
-Poids `m-a-p/YuE2-3B` et `m-a-p/YuE2-Vae` (CC-BY-NC-4.0), tokenizer converti de `Qwen/Qwen2.5-0.5B`. Les packs pré-quantifiés se créent à la première utilisation d'un preset (`$YUE2_MODELS_DIR/YuE2-3B/mlx-prequantized/<preset>[-head]/`) — voir [Weights.md](Weights.md).
+Weights `m-a-p/YuE2-3B` and `m-a-p/YuE2-Vae` (CC-BY-NC-4.0), tokenizer converted from `Qwen/Qwen2.5-0.5B`. Prequantized packs are created on the first use of a preset (`$YUE2_MODELS_DIR/YuE2-3B/mlx-prequantized/<preset>[-head]/`) — see [Weights.md](Weights.md).
 
 ## `references`
 
 ```
 $ yue2 references
 4bit-fast   quant=int4-mixed+head precision=bf16 nar=dequantized compiled=false vae=fp16/1024 residency=all memory=mac ode=32
-            pack int4-mixed-head (2,5 Go), tout résident, NAR dé-quantifié en bf16 pour le solve
+            int4-mixed-head pack (2.5 GB), everything resident, NAR dequantized to bf16 for the solve
 …
 ```
 
@@ -92,7 +92,7 @@ yue2 profile semantic --plan run/plan --out prof/ --quant int4-mixed --quant-hea
 yue2 bench-coreai-nar --frames 256,1024 --backends mlx,coreai-gpu --quant int4-mixed [--iterations 6]
 ```
 
-Les fixtures réelles viennent de `Scripts/reference/real_fixtures.py {vae|lm|nar|song}` (environnement Python de `Scripts/setup-reference-env.sh`). Verdicts : `PARITY OK …` / `PARITY FAILED …` en dernière ligne.
+Real fixtures come from `Scripts/reference/real_fixtures.py {vae|lm|nar|song}` (Python environment from `Scripts/setup-reference-env.sh`). Verdicts: `PARITY OK …` / `PARITY FAILED …` on the last line.
 
 ## `encode`, `remix-experimental`
 
@@ -101,4 +101,4 @@ yue2 encode --audio input.mp3 --out run/enc --roundtrip
 yue2 remix-experimental --request song.json --source-latent run/enc/latent.npy --frames 1000 --noise-fraction 0.7 --out run/remix
 ```
 
-L'encodeur est validé numériquement (parité, aller-retour écouté) ; le remix est un essai SDEdit hors plan, sans validation.
+The encoder is validated numerically (parity, listened round trip); the remix is an SDEdit experiment outside the plan, unvalidated.

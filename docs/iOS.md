@@ -1,64 +1,64 @@
-# iPhone : intégrer, mesurer, tenir dans 8 Go
+# iPhone: integrating, measuring, fitting in 8 GB
 
-Le moteur tourne sur iOS 27 (Metal via MLX ; Core AI en option pour le VAE). L'app de référence, `YuE2Studio`, vit dans un dépôt séparé (`yue2-ios`) et épingle ce package en version exacte (`Scripts/pin-engine.sh v1.0.0` de son côté). Ce document dit ce que l'app doit faire et ce qui a été mesuré sur un iPhone 15 Pro Max (A17 Pro, 8 Go, iOS 27.0).
+The engine runs on iOS 27 (Metal through MLX; Core AI optional for the VAE). The reference app, `YuE2Studio`, lives in a separate repository (`yue2-ios`) and pins this package at an exact version (`Scripts/pin-engine.sh v1.0.0` on its side). This document says what the app must do and what was measured on an iPhone 15 Pro Max (A17 Pro, 8 GB, iOS 27.0).
 
-## Projet Xcode
+## Xcode project
 
-- Deployment target iOS 27 ; dépendance `YuE2Core` (et `MLXProfiler` pour les mesures) ; mlx-swift compile sa metallib pour iOS dans le build Xcode, rien à faire.
-- Capability **Increased Memory Limit** (`com.apple.developer.kernel.increased-memory-limit`) : sans elle la limite jetsam tombe sous les 3,4 Go du profil `4bit-lean`.
-- `UIFileSharingEnabled` pour déposer le pack via Finder et récupérer les WAV.
-- Ne pas lier `CoreAI` explicitement (absent du SDK simulateur ; auto-lié là où `import CoreAI` compile).
-- Le Simulator ne sert à rien pour l'inférence : MLX plante au premier tenseur (Metal logiciel) ; appareil physique obligatoire.
+- Deployment target iOS 27; dependency `YuE2Core` (and `MLXProfiler` for measurements); mlx-swift compiles its metallib for iOS inside the Xcode build, nothing to do.
+- Capability **Increased Memory Limit** (`com.apple.developer.kernel.increased-memory-limit`): without it the jetsam limit falls below the 3.4 GB of `4bit-lean`.
+- `UIFileSharingEnabled` to drop the pack through Finder and retrieve WAVs.
+- Do not link `CoreAI` explicitly (absent from the simulator SDK; auto-linked where `import CoreAI` compiles).
+- The Simulator is useless for inference: MLX crashes on the first tensor (software Metal); a physical device is required.
 
-## Le profil iPhone
+## The iPhone profile
 
-`4bit-lean` : pack `int4-mixed-head` (2,5 Go, déposé dans `Caches/models/YuE2-3B/mlx-prequantized/int4-mixed-head/`), fp16, résidence par étape, NAR packé, VAE fp16 tuile 256, limites mémoire calées sur `os_proc_available_memory` (cache ≈ 1 Go, seuil = disponible − 1,25 Go). `8bit-lean` (4,4 Go) tient aussi. Le bf16 ne tient pas.
+`4bit-lean`: `int4-mixed-head` pack (2.5 GB, dropped into `Caches/models/YuE2-3B/mlx-prequantized/int4-mixed-head/`), fp16, stage-scoped residency, packed NAR, VAE fp16 tile 256, memory limits sized from `os_proc_available_memory` (cache ≈ 1 GB, threshold = available − 1.25 GB). `8bit-lean` (4.4 GB) also fits. bf16 does not.
 
 ```swift
 let profile = YuE2ReferenceProfile.named("4bit-lean")!
 profile.applyGlobalPolicy()
 ```
 
-## Les quatre étapes, reprenables
+## The four stages, resumable
 
-| Étape | Appel | Résident | Artefact |
+| Stage | Call | Resident | Artifact |
 |---|---|---|---|
-| Plan (ABC) | `Planner.plan(request:)` | voie AR + embeddings + head | `plan.json`, `score.abc` |
-| Sémantique | `SemanticGenerator.generateSemantic(plan:)` | idem | `semantic.npy` (+ cache KV en mémoire si l'étape 3 suit) |
-| NAR | `Synthesizer.synthesize(prefix:codec:seed:reuseCache:onBeforeChunk:resume:onStep:)` | voie NAR (AR libérée dès le cache prêt) | `latent.npy` ; `nar-checkpoint.json` + `nar-state.npy` à chaque pas |
-| VAE | `decodeTiled(using: vae, latents, coreFrames: 256)` | rien du LM | `audio.wav` |
+| Plan (ABC) | `Planner.plan(request:)` | AR path + embeddings + head | `plan.json`, `score.abc` |
+| Semantic | `SemanticGenerator.generateSemantic(plan:)` | same | `semantic.npy` (+ KV cache in memory when stage 3 follows) |
+| NAR | `Synthesizer.synthesize(prefix:codec:seed:reuseCache:onBeforeChunk:resume:onStep:)` | NAR path (AR released once the cache is ready) | `latent.npy`; `nar-checkpoint.json` + `nar-state.npy` every step |
+| VAE | `decodeTiled(using: vae, latents, coreFrames: 256)` | nothing from the LM | `audio.wav` |
 
-Le plus simple reste `YuE2Pipeline` avec les défauts du profil mobile ; persister `onNARStep` dans le dossier de la chanson, reprendre avec `narResume`, recharger un `ModelSession` par chanson.
+The simplest remains `YuE2Pipeline` with the mobile-profile defaults; persist `onNARStep` in the song's folder, resume with `narResume`, reload one `ModelSession` per song.
 
-## Perte du GPU en arrière-plan
+## Losing the GPU in the background
 
-iOS coupe le GPU dès que l'app quitte le premier plan (`kIOGPUCommandBufferCallbackErrorBackgroundExecutionNotPermitted`), sans délai, et mlx-core lève l'erreur dans le gestionnaire Metal : crash impossible à rattraper. Trois mesures dans le moteur, deux gestes dans l'app :
+iOS cuts the GPU as soon as the app leaves the foreground (`kIOGPUCommandBufferCallbackErrorBackgroundExecutionNotPermitted`), with no grace period, and mlx-core raises the error inside the Metal handler: an uncatchable crash. Three measures in the engine, two gestures in the app:
 
-1. `YuE2GPUGate.shared.suspend()` sur `scenePhase == .inactive`, `resume()` sur `.active` et sur toute annulation.
-2. Persister chaque `NARCheckpoint` reçu par `onNARStep` ; au retour, reprendre avec `narResume`. Un incident coûte un pas d'ODE plus le re-préfixe (≈ 4 s), pas l'étape.
-3. Afficher aux utilisateurs : « Restez dans l'app pendant la synthèse : iOS coupe le GPU en arrière-plan ».
+1. `YuE2GPUGate.shared.suspend()` on `scenePhase == .inactive`, `resume()` on `.active` and on every cancellation.
+2. Persist every `NARCheckpoint` received through `onNARStep`; on return, resume with `narResume`. An incident costs one ODE step plus the re-prefill (≈ 4 s), not the stage.
+3. Tell users: "Stay in the app during synthesis: iOS cuts the GPU in the background."
 
-Le résidu (bascule pendant l'animation du multitâche, avant le parcage) ne se ferme qu'avec un patch de mlx-core (enregistrer l'erreur, la relever au prochain `eval`) — proposé en amont, non intégré.
+What remains (switching during the multitasking animation, before the worker is parked) only closes with an mlx-core patch (record the error, rethrow on the next `eval`) — proposed upstream, not integrated.
 
-## Ce qui a été mesuré (22 septembre 2026, pack int4-mixed-head, avant les correctifs de v1.0.0)
+## What was measured (22 September 2026, int4-mixed-head pack, before the v1.0.0 fixes)
 
-| Point | Mesure |
+| Point | Measurement |
 |---|---|
-| Chargement AR seul | 5,6 s, footprint 3,0 Go (dont ≈ 1,4 Go de trop, corrigé en v1.0.0 : conversion fp16 de la voie parquée) |
-| AR, 512 tokens | 25 tok/s, TTFT 0,3 s (Mac bf16 : 60-67 tok/s) |
-| NAR, ms par évaluation à 256 / 512 / 1 024 frames | 665 / 1 294 / 2 776 à froid ; 3 700-4 050 à 1 024 une fois `fair` |
-| Thermique | `nominal` → `fair` après ≈ 60 s de GPU soutenu, NAR −31 à −46 % ; `serious` sur une chanson de 60 s, l'app fait du pacing (2 s de repos entre pas) |
-| VAE, 1 024 frames | MLX fp16/256 : 6,0 s, pic 2,2 Go ; Core AI GPU : 5,4 s, pic 2,1 Go, 2 Go résidents dès le chargement |
-| Chanson de 30 s | 273 s, pic 3,6 Go (phase plan ; attendu ≈ 2,2-2,4 Go avec v1.0.0), écoute validée |
-| Chanson de 60 s | ≈ 12,7 min hors chargements, pic 3,5 Go |
-| NAR Core AI GPU | 4,4 s par évaluation à 256 frames (6,6× MLX), paliers ≤ 1 024 tokens de préfixe : pas retenu |
+| AR-only load | 5.6 s, 3.0 GB footprint (≈ 1.4 GB of it spurious, fixed in v1.0.0: fp16 cast of the parked branch) |
+| AR, 512 tokens | 25 tok/s, TTFT 0.3 s (Mac bf16: 60-67 tok/s) |
+| NAR, ms per evaluation at 256 / 512 / 1 024 frames | 665 / 1 294 / 2 776 cold; 3 700-4 050 at 1 024 once `fair` |
+| Thermal | `nominal` → `fair` after ≈ 60 s of sustained GPU, NAR −31 to −46 %; `serious` on a 60 s song, the app paces (2 s rest between steps) |
+| VAE, 1 024 frames | MLX fp16/256: 6.0 s, 2.2 GB peak; Core AI GPU: 5.4 s, 2.1 GB peak, 2 GB resident from load |
+| 30 s song | 273 s, 3.6 GB peak (plan phase; expected ≈ 2.2-2.4 GB with v1.0.0), listening validated |
+| 60 s song | ≈ 12.7 min excluding loads, 3.5 GB peak |
+| NAR Core AI GPU | 4.4 s per evaluation at 256 frames (6.6× MLX), buckets ≤ 1 024 prefix tokens: not retained |
 
-Règle de mesure sur l'appareil : tout point NAR au-delà de la première minute d'un passage est un point throttlé ; pour une valeur à froid, un point par lancement, téléphone reposé. Enregistrer `SystemMetrics.processFootprint()` avant / après / pic (`FootprintSampler`), `os_proc_available_memory()` au départ, `ProcessInfo.thermalState` avant / après, et la configuration exacte. Un point qui « disparaît » (jetsam, pas d'erreur Swift) est une mesure : c'est la limite.
+Measurement rule on the device: any NAR point past the first minute of a pass is a throttled point; for a cold value, one point per launch, phone rested. Record `SystemMetrics.processFootprint()` before / after / peak (`FootprintSampler`), `os_proc_available_memory()` at start, `ProcessInfo.thermalState` before / after, and the exact configuration. A point that "disappears" (jetsam, no Swift error) is a measurement: that is the limit.
 
-## À remesurer avec v1.0.0
+## To re-measure with v1.0.0
 
-Pic de la phase plan (correctif fp16), effet des limites adaptatives sur le temps, bascule sur Safari pendant chaque étape (porte + reprise), VAE Core AI GPU sur l'appareil, 16 et 24 pas d'ODE à l'oreille.
+Plan-phase peak (fp16 fix), effect of the adaptive limits on time, switching to Safari during each stage (gate + resume), Core AI GPU VAE on the device, 16 and 24 ODE steps by ear.
 
 ## Core AI
 
-`Scripts/coreai/export_vae.py` et `export_nar_stack.py` (`coreai-torch` 0.4.2, `coreai-core` 1.0.0b2) produisent les `.aimodel` ; `xcrun coreai-build compile --platform iOS --preferred-compute gpu` les compile. Jamais de spécialisation CPU pour le VAE (convolution transposée fausse, noyaux ≥ 8). Le Neural Engine est une impasse avec cette version de la chaîne (repli silencieux des convs transposées, crash de `dequantize`).
+`Scripts/coreai/export_vae.py` and `export_nar_stack.py` (`coreai-torch` 0.4.2, `coreai-core` 1.0.0b2) produce the `.aimodel` assets; `xcrun coreai-build compile --platform iOS --preferred-compute gpu` compiles them. Never a CPU specialization for the VAE (transposed convolution is wrong on CPU for kernels ≥ 8). The Neural Engine is a dead end with this toolchain version (silent fallback of transposed convolutions, `dequantize` crash).

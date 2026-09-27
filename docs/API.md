@@ -1,18 +1,18 @@
-# API Swift de `YuE2Core`
+# `YuE2Core` Swift API
 
-Tout ce qui suit est `public`, documenté dans le code (doc comments) et couvert par les tests. Package `YuE2Swift`, produit `YuE2Core` ; dépendances épinglées (`mlx-swift` 0.31.6 exact, `swift-mlx-profiler` ≥ 1.5). macOS 15+ / iOS 27+, Swift 6, concurrence stricte.
+Everything below is `public`, documented in the code (doc comments) and covered by tests. Package `YuE2Swift`, product `YuE2Core`; pinned dependencies (`mlx-swift` 0.31.6 exact, `swift-mlx-profiler` ≥ 1.5). macOS 15+ / iOS 27+, Swift 6, strict concurrency.
 
 ```swift
 dependencies: [.package(url: "https://github.com/VincentGourbin/yue2-mlx-swift", exact: "1.0.0")]
 ```
 
-## Le chemin le plus court
+## The shortest path
 
 ```swift
 import YuE2Core
 
 let profile = YuE2ReferenceProfile.named("4bit-lean")!
-profile.applyGlobalPolicy()                       // profil mémoire, calcul NAR, decode compilé
+profile.applyGlobalPolicy()                       // memory profile, NAR compute, compiled decode
 
 let session = try await ModelSession.load(
     modelsDir: modelsDir, quant: profile.quant, quantizeHead: profile.quantizeHead,
@@ -25,30 +25,30 @@ let pipeline = YuE2Pipeline(
     vaeCoreFrames: profile.vaeCoreFrames,
     releaseWeightsBetweenStages: profile.releaseWeightsBetweenStages)
 
-let song = try await pipeline.generate(request: request) { event in /* progression */ }
+let song = try await pipeline.generate(request: request) { event in /* progress */ }
 try song.saveArtifacts(to: outputDirectory)
 ```
 
-`SongRequest` (style, paroles, `cot`, graine, `abc` optionnel) est `Codable` et lit le JSON de la CLI. `SongResult` porte l'audio (`[1, samples, 2]` fp32), les latents, les tokens et les temps par phase.
+`SongRequest` (style, lyrics, `cot`, seed, optional `abc`) is `Codable` and reads the CLI's JSON. `SongResult` carries the audio (`[1, samples, 2]` fp32), the latents, the tokens and the per-phase timings.
 
-## Modèle et résidence
+## Model and residency
 
 ```swift
 public final class ModelSession {
     static func load(modelsDir:quant:quantizeHead:precision:residency:) async throws -> ModelSession
     var model: YuE2ForCausalLM; var tokenizer: YuE2Tokenizer; var config: GenerationConfig
     private(set) var resident: YuE2WeightResidency      // .ar, .nar, .all
-    func loadWeights(of: YuE2WeightPath) throws           // no-op si déjà résident
-    func releaseWeights(of: YuE2WeightPath) -> Int        // octets libérés
+    func loadWeights(of: YuE2WeightPath) throws           // no-op when already resident
+    func releaseWeights(of: YuE2WeightPath) -> Int        // bytes released
     func releaseAllWeights() -> Int
 }
 ```
 
-Une voie libérée est inutilisable tant qu'elle n'est pas rechargée (elle calculerait sur des zéros) : c'est le contrat de la résidence par étape. Le chargement safetensors est paresseux ; ne pas évaluer un tenseur, c'est ne pas l'allouer. `applyPrecision(_:where:)` ne convertit que les voies résidentes (convertir une voie parquée la matérialise : 1,44 Go, le pic iPhone de la 0.2.1).
+A released branch is unusable until reloaded (it would compute on zeros): that is the contract of stage-scoped residency. Safetensors loading is lazy; a tensor that is never evaluated is never allocated. `applyPrecision(_:where:)` only casts resident branches (casting a parked branch materializes it: 1.44 GB, the iPhone peak of 0.2.1).
 
-`YuE2ForCausalLM.dequantizeWeights(of: .nar)` remplace les projections 8 bits par des `Linear` bf16 (profils rapides) ; la voie ne peut plus être rechargée, la session est à recréer pour une autre chanson.
+`YuE2ForCausalLM.dequantizeWeights(of: .nar)` replaces the 8-bit projections with bf16 `Linear`s (fast profiles); the branch can no longer be reloaded, so recreate the session for the next song.
 
-## Pipeline et étapes
+## Pipeline and stages
 
 ```swift
 public final class YuE2Pipeline {
@@ -57,64 +57,64 @@ public final class YuE2Pipeline {
 }
 ```
 
-Les défauts `nil` viennent du profil mémoire (Mac : 1024 / tout résident ; mobile : 256 / résidence par étape). `PipelineEvent` : `.stage`, `.abcToken`, `.semanticToken`, `.narProgress`, `.vaeProgress`.
+The `nil` defaults come from the memory profile (Mac: 1024 / everything resident; mobile: 256 / stage-scoped residency). `PipelineEvent`: `.stage`, `.abcToken`, `.semanticToken`, `.narProgress`, `.vaeProgress`.
 
-Les étapes existent séparément, chacune reprenable depuis ses artefacts :
+The stages exist separately, each resumable from its artifacts:
 
-| Étape | Type | Entrée → sortie |
+| Stage | Type | Input → output |
 |---|---|---|
-| 1 | `Planner.plan(request:abcSampling:onToken:cancel:)` | requête → `SymbolicPlan` (partition, préfixe) |
-| 2 | `SemanticGenerator.generateSemantic(plan:sampling:onToken:cancel:)` | plan → tokens sémantiques + cache KV |
+| 1 | `Planner.plan(request:abcSampling:onToken:cancel:)` | request → `SymbolicPlan` (score, prefix) |
+| 2 | `SemanticGenerator.generateSemantic(plan:sampling:onToken:cancel:)` | plan → semantic tokens + KV cache |
 | 3 | `Synthesizer.synthesize(prefix:codec:seed:steps:reuseCache:onBeforeChunk:resume:onStep:cancel:)` | tokens → latents `[T, 64]` |
 | 4 | `decodeTiled(using: any VAEDecoding, _:coreFrames:haloFrames:)` | latents → audio |
 
-`onBeforeChunk(needsARPath:)` est le point où la résidence libère la voie AR et charge la voie NAR ; `onStep` livre un `NARCheckpoint` après chaque pas d'ODE et `resume:` en repart (reprise bit-exacte, chansons mono-chunk).
+`onBeforeChunk(needsARPath:)` is where residency releases the AR branch and loads the NAR one; `onStep` delivers a `NARCheckpoint` after every ODE step and `resume:` restarts from one (bit-exact resume, single-chunk songs).
 
 ```swift
 public struct NARCheckpoint { chunkIndex, step, steps, state: MLXArray
     func save(to: URL) throws; static func load(from: URL) throws -> NARCheckpoint?; static func clear(in: URL) }
 ```
 
-## Perte du GPU en arrière-plan (iOS)
+## Losing the GPU in the background (iOS)
 
-iOS refuse toute soumission GPU d'une app hors premier plan, et mlx-core lève l'erreur dans le gestionnaire d'achèvement Metal, irrattrapable. Le moteur s'arrête avant :
+iOS refuses every GPU submission from an app that is not in the foreground, and mlx-core raises the error inside the Metal completion handler, where it cannot be caught. The engine stops before that:
 
 ```swift
 YuE2GPUGate.shared.suspend()   // scenePhase == .inactive
-YuE2GPUGate.shared.resume()    // .active, et à toute annulation
+YuE2GPUGate.shared.resume()    // .active, and on every cancellation
 ```
 
-La porte est attendue avant chaque token, chaque couche NAR (si `YuE2ExecutionPolicy.evalPerLayer`, défaut mobile : 28 unités de 0,2-0,4 s au lieu d'un graphe de 10-20 s) et chaque tuile VAE ; `wait(cancel:)` renvoie `false` si l'annulation tombe pendant l'attente. Avec le checkpoint par pas, un résidu coûte un pas.
+The gate is awaited before every token, every NAR layer (when `YuE2ExecutionPolicy.evalPerLayer`, the mobile default: 28 units of 0.2-0.4 s instead of one 10-20 s graph) and every VAE tile; `wait(cancel:)` returns `false` when the cancellation lands during the wait. With per-step checkpoints, what remains costs one step.
 
-## Backends VAE
+## VAE backends
 
 ```swift
 public protocol VAEDecoding {
     var config: VAEConfig { get }
-    var enumeratedFrameCounts: [Int]? { get }        // nil = toute longueur (MLX)
+    var enumeratedFrameCounts: [Int]? { get }        // nil = any length (MLX)
     func decode(_ z: MLXArray) async throws -> MLXArray
 }
 func loadVAEBackend(_ kind: VAEBackendKind, directory: URL, precision: VAEPrecision) async throws -> any VAEDecoding
 func planVAETiles(frames:coreFrames:haloFrames:enumerated:) -> [VAETileWindow]
 ```
 
-`.mlx` (toujours), `.coreaiGPU` (macOS/iOS 27, parité 54,7 dB grâce aux fenêtres à forme exacte de `planVAETiles`), `.coreaiANE` (impasse avec `coreai-torch` 0.4.2). `loadVAEBackend` lance `.backendUnavailable`, jamais de substitution silencieuse : le repli MLX est à l'appelant, journalisé. Jamais `.cpuOnly` pour ce modèle (convolution transposée fausse sur CPU).
+`.mlx` (always), `.coreaiGPU` (macOS/iOS 27, 54.7 dB parity thanks to `planVAETiles`' exact-shape windows), `.coreaiANE` (dead end with `coreai-torch` 0.4.2). `loadVAEBackend` throws `.backendUnavailable`, never substitutes silently: the MLX fallback belongs to the caller, logged. Never `.cpuOnly` for this model (transposed convolutions are wrong on CPU).
 
-## Mémoire et politique d'exécution
+## Memory and execution policy
 
 ```swift
 YuE2MemoryManager.profile                  // .mac | .mobile (#if os(iOS), YUE2_MEMORY_PROFILE)
 YuE2MemoryManager.configure(for: .ar | .nar | .vae | .load)
-YuE2MemoryManager.mobileLimitsMB()         // cache ≈ 1 Go, seuil = disponible − 1,25 Go
+YuE2MemoryManager.mobileLimitsMB()         // cache ≈ 1 GB, threshold = available − 1.25 GB
 YuE2ExecutionPolicy.narCompute             // .packed | .dequantized
-YuE2ExecutionPolicy.evalPerLayer           // défaut mobile
-YuE2ExecutionPolicy.compiledDecode         // off, mesuré sans gain
+YuE2ExecutionPolicy.evalPerLayer           // mobile default
+YuE2ExecutionPolicy.compiledDecode         // off, measured without gain
 let sampler = FootprintSampler(); sampler.start(); …; sampler.stop(); sampler.peakMB; sampler.mlxActivePeakMB
 ```
 
-`FootprintSampler` suit `phys_footprint` (le chiffre que juge jetsam) sur un thread dédié, y compris ce que MLX ne voit pas (Core AI, Metal).
+`FootprintSampler` tracks `phys_footprint` (the number jetsam judges) on a dedicated thread, including what MLX does not see (Core AI, Metal).
 
-## Profils de référence
+## Reference profiles
 
 ```swift
 public struct YuE2ReferenceProfile { id, bits, kind, quant, quantizeHead, precision, narCompute, compiledDecode,
@@ -122,12 +122,12 @@ public struct YuE2ReferenceProfile { id, bits, kind, quant, quantizeHead, precis
     static let all: [YuE2ReferenceProfile]; static func named(_:) -> YuE2ReferenceProfile?; func applyGlobalPolicy() }
 ```
 
-Voir [References.md](References.md) pour les six et leurs mesures.
+See [References.md](References.md) for the six and their measurements.
 
-## Quantification
+## Quantization
 
-`YuE2Quantization` : `.none`, `.qint8`, `.int4` (voie AR), `.qint8All`, `.int4All`, `.int4Mixed` (voie AR 4 bits, NAR 8 bits, embeddings 4 bits) ; `quantizeHead` ajoute `lm_head`. `LMWeightLoader.load` quantifie à la volée puis exporte `mlx-prequantized/<preset>[-head]/` ; les chargements suivants lisent l'export. Parités : AR int4 greedy 8/8, NAR 8 bits rel 0,049 sur 32 pas (le NAR 4 bits échoue : 0,15).
+`YuE2Quantization`: `.none`, `.qint8`, `.int4` (AR path), `.qint8All`, `.int4All`, `.int4Mixed` (4-bit AR path, 8-bit NAR, 4-bit embeddings); `quantizeHead` adds `lm_head`. `LMWeightLoader.load` quantizes on the fly then exports `mlx-prequantized/<preset>[-head]/`; later loads read the export. Parities: AR int4 greedy 8/8, NAR 8-bit rel 0.049 over 32 steps (a 4-bit NAR fails: 0.15).
 
 ## Tests
 
-`Scripts/run-tests.sh` (swift-testing, parallélisation 1 : interblocage connu dans mlx-swift). Deux niveaux : sans poids (fixtures tiny sous `parity/`, toujours vert, 149 tests) et avec les vrais poids (`YUE2_MODELS_DIR`, suites `Real*`, `Quantization`, `GenerationSmoke`). Toute modification numérique passe par `RealLMParityTests` (greedy 8/8 sur les deux phases) et `RealNARParityTests`.
+`Scripts/run-tests.sh` (swift-testing, parallelization 1: a known deadlock in mlx-swift). Two tiers: weight-free (tiny fixtures under `parity/`, always green, 149 tests) and real weights (`YUE2_MODELS_DIR`, suites `Real*`, `Quantization`, `GenerationSmoke`). Every numerical change goes through `RealLMParityTests` (greedy 8/8 on both phases) and `RealNARParityTests`.

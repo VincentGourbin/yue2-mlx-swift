@@ -1,52 +1,52 @@
-# Poids, packs et licence
+# Weights, packs and licence
 
-## Ce que le moteur charge
+## What the engine loads
 
-| Répertoire (`$YUE2_MODELS_DIR/…`) | Source | Taille | Licence |
+| Directory (`$YUE2_MODELS_DIR/…`) | Source | Size | Licence |
 |---|---|---|---|
-| `YuE2-3B/` | `m-a-p/YuE2-3B` (bf16, 628 tenseurs) + `tokenizer.json` converti de `Qwen/Qwen2.5-0.5B` | 7,3 Go | CC-BY-NC-4.0 (tokenizer : Apache-2.0) |
-| `YuE2-Vae/` | `m-a-p/YuE2-Vae` (décodeur et encodeur Oobleck, fp32) | 0,5 Go | CC-BY-NC-4.0 |
-| `YuE2-Vae-legacy/` | ancien VAE, optionnel | 0,5 Go | CC-BY-NC-4.0 |
-| `YuE2-3B/mlx-prequantized/<preset>[-head]/model.safetensors` | **produit localement** à la première utilisation d'un preset | 2,4-5,5 Go | dérivé, même licence |
-| `YuE2-Vae/coreai/*.aimodel`, `YuE2-3B/coreai/*.aimodel` | `Scripts/coreai/export_*.py` | 0,13 / 1,3 Go | dérivé |
+| `YuE2-3B/` | `m-a-p/YuE2-3B` (bf16, 628 tensors) + `tokenizer.json` converted from `Qwen/Qwen2.5-0.5B` | 7.3 GB | CC-BY-NC-4.0 (tokenizer: Apache-2.0) |
+| `YuE2-Vae/` | `m-a-p/YuE2-Vae` (Oobleck decoder and encoder, fp32) | 0.5 GB | CC-BY-NC-4.0 |
+| `YuE2-Vae-legacy/` | older VAE, optional | 0.5 GB | CC-BY-NC-4.0 |
+| `YuE2-3B/mlx-prequantized/<preset>[-head]/model.safetensors` | **produced locally** on the first use of a preset | 2.4-5.5 GB | derivative, same licence |
+| `YuE2-Vae/coreai/*.aimodel`, `YuE2-3B/coreai/*.aimodel` | `Scripts/coreai/export_*.py` | 0.13 / 1.3 GB | derivative |
 
-`yue2 download` récupère les deux premiers. Le code de ce dépôt est MIT ; les poids ne sont jamais distribués ici.
+`yue2 download` fetches the first two. The code in this repository is MIT; the weights are never distributed here.
 
-## Les packs pré-quantifiés
+## The prequantized packs
 
-| Pack | Contenu | Taille | Profils |
+| Pack | Content | Size | Profiles |
 |---|---|---|---|
-| `int4-mixed-head` | voie AR, embeddings, head en 4 bits (groupe 64, affine), voie NAR en 8 bits, `latent_pos_embed.pe` recalculé | 2,5 Go | `4bit-fast`, `4bit-lean` |
-| `qint8-all-head` | tout en 8 bits (groupe 64) | 3,7 Go | `8bit-fast`, `8bit-lean` |
-| `int4-head` | voie AR, embeddings, head en 4 bits, NAR bf16 | 3,5 Go | le plus rapide (66-69 s), candidat à un septième profil |
-| `qint8`, `qint8-head`, `int4`, `int4-all-head` | variantes de mesure | 2,4-5,5 Go | — |
+| `int4-mixed-head` | AR path, embeddings, head in 4 bits (group 64, affine), NAR path in 8 bits, `latent_pos_embed.pe` recomputed | 2.5 GB | `4bit-fast`, `4bit-lean` |
+| `qint8-all-head` | everything in 8 bits (group 64) | 3.7 GB | `8bit-fast`, `8bit-lean` |
+| `int4-head` | AR path, embeddings, head in 4 bits, NAR bf16 | 3.5 GB | the fastest (66-69 s), candidate for a seventh profile |
+| `qint8`, `qint8-head`, `int4`, `int4-all-head` | measurement variants | 2.4-5.5 GB | — |
 
-La première utilisation d'un preset charge le checkpoint bf16 entier (7,3 Go), quantifie, écrit l'export puis continue : plusieurs minutes et 8-14 Go de pic, une seule fois par machine. Les chargements suivants lisent l'export directement (`LMWeightLoader.load`), y compris voie par voie pour la résidence par étape.
+The first use of a preset loads the whole bf16 checkpoint (7.3 GB), quantizes, writes the export and carries on: several minutes and an 8-14 GB peak, once per machine. Later loads read the export directly (`LMWeightLoader.load`), including branch by branch for stage-scoped residency.
 
-Parités des packs (fixtures réelles, `yue2 parity lm|nar`) : AR int4 greedy 8/8 sur les deux phases, rel 0,0075 ; NAR 8 bits rel 0,049 sur un solve de 32 pas (budget 0,10), validé à l'écoute ; NAR 4 bits rel 0,15, écarté.
+Pack parities (real fixtures, `yue2 parity lm|nar`): AR int4 greedy 8/8 on both phases, rel 0.0075; NAR 8-bit rel 0.049 over a 32-step solve (budget 0.10), validated by listening; NAR 4-bit rel 0.15, rejected.
 
-## Republier des packs de référence sur Hugging Face
+## Republishing reference packs on Hugging Face
 
-Pour éviter la quantification locale (et les 7,3 Go de bf16 sur un iPhone), les packs de référence peuvent être publiés comme dérivés, sous la même licence CC-BY-NC-4.0 avec attribution à m-a-p, usage non commercial. Ce n'est pas fait par ce dépôt : c'est une décision et un compte à l'auteur.
+To avoid local quantization (and 7.3 GB of bf16 on an iPhone), the reference packs can be published as derivatives, under the same CC-BY-NC-4.0 licence with attribution to m-a-p, non-commercial use. This repository does not do it: it is the author's decision and account.
 
-Proposition : un dépôt `VincentGourbin/yue2-mlx-packs` avec un dossier par pack (`int4-mixed-head/`, `qint8-all-head/`, `int4-head/`), le `model.safetensors` exporté tel quel (métadonnées `format`, `quantization`, `quantize_head`, `bits`, `group_size`, `pe`), un `README.md` de carte de modèle, et le SHA-256 de chaque fichier. `Scripts/publish-packs.sh` prépare l'arborescence et imprime les commandes `hf upload` ; il n'envoie rien tout seul.
+Proposal: a `VincentGourbin/yue2-mlx-packs` repository with one folder per pack (`int4-mixed-head/`, `qint8-all-head/`, `int4-head/`), the exported `model.safetensors` as is (metadata `format`, `quantization`, `quantize_head`, `bits`, `group_size`, `pe`), a model-card `README.md`, and each file's SHA-256. `Scripts/publish-packs.sh` prepares the tree and prints the `hf upload` commands; it uploads nothing by itself.
 
-Une fois publiés, `yue2 download --model packs` (à écrire) les placerait sous `mlx-prequantized/` ; l'app iOS les téléchargerait au premier lancement (2,5 Go pour `4bit-lean`).
+Once published, `yue2 download --model packs` (to be written) would place them under `mlx-prequantized/`; the iOS app would download them on first launch (2.5 GB for `4bit-lean`).
 
-## Carte de modèle (brouillon)
+## Model card (draft)
 
 ```
-# YuE2 MLX packs — poids pré-quantifiés pour yue2-mlx-swift
+# YuE2 MLX packs — prequantized weights for yue2-mlx-swift
 
-Dérivés de m-a-p/YuE2-3B (CC-BY-NC-4.0) pour le port Swift/MLX
-https://github.com/VincentGourbin/yue2-mlx-swift (MIT). Usage non commercial, attribution m-a-p.
+Derived from m-a-p/YuE2-3B (CC-BY-NC-4.0) for the Swift/MLX port
+https://github.com/VincentGourbin/yue2-mlx-swift (MIT). Non-commercial use, attribution m-a-p.
 
-| Pack | Bits | Taille | Profils | Parité |
-| int4-mixed-head | AR/embed/head 4, NAR 8 | 2,5 Go | 4bit-fast, 4bit-lean | AR greedy 8/8 ; NAR rel 0,049 (32 pas) |
-| qint8-all-head | 8 partout | 3,7 Go | 8bit-fast, 8bit-lean | AR rel 0,005 ; NAR rel 0,027 |
-| int4-head | AR/embed/head 4, NAR bf16 | 3,5 Go | (rapide) | AR greedy 8/8 |
+| Pack | Bits | Size | Profiles | Parity |
+| int4-mixed-head | AR/embed/head 4, NAR 8 | 2.5 GB | 4bit-fast, 4bit-lean | AR greedy 8/8; NAR rel 0.049 (32 steps) |
+| qint8-all-head | 8 throughout | 3.7 GB | 8bit-fast, 8bit-lean | AR rel 0.005; NAR rel 0.027 |
+| int4-head | AR/embed/head 4, NAR bf16 | 3.5 GB | (fast) | AR greedy 8/8 |
 
-Format : safetensors MLX (poids packés uint32 + scales + biases, groupe 64, affine), métadonnées
-`format=yue2-prequantized-v1`. Chargement : `yue2 generate --reference <profil>` ou
+Format: MLX safetensors (packed uint32 weights + scales + biases, group 64, affine), metadata
+`format=yue2-prequantized-v1`. Loading: `yue2 generate --reference <profile>` or
 `LMWeightLoader.load(directory:config:quantization:quantizeHead:)`.
 ```
