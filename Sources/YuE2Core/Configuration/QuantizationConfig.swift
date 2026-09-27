@@ -30,6 +30,11 @@ public enum YuE2Quantization: String, CaseIterable, Sendable, Codable {
     case qint8All = "qint8-all"
     case int4All = "int4-all"
     case int4Mixed = "int4-mixed"
+    /// Candidates for the most constrained devices (2026-09-27, to be qualified by parity and
+    /// listening): AR path, embeddings and head at 3 or 2 bits (group 64), NAR kept at 8 bits
+    /// like `.int4Mixed`. MLX's affine quantizer supports 2, 3, 4, 5, 6 and 8 bits.
+    case int3Mixed = "int3-mixed"
+    case int2Mixed = "int2-mixed"
 
     /// (bits, groupSize) for MLXNN's affine quantizer, `nil` for `.none`. Group size 64 is the
     /// plan's explicit choice (§7 O5: "quantification 8-bit affine (group 64)"); int4 reuses it
@@ -41,6 +46,8 @@ public enum YuE2Quantization: String, CaseIterable, Sendable, Codable {
         case .none: return nil
         case .qint8, .qint8All: return (8, 64)
         case .int4, .int4All, .int4Mixed: return (4, 64)
+        case .int3Mixed: return (3, 64)
+        case .int2Mixed: return (2, 64)
         }
     }
 
@@ -48,12 +55,17 @@ public enum YuE2Quantization: String, CaseIterable, Sendable, Codable {
     /// `embed_tokens` are eligible, and the exported pack omits `latent_pos_embed.pe` (recomputed
     /// instead — `NARModules.computeLatentPositions`).
     public var isAllPreset: Bool {
-        self == .qint8All || self == .int4All || self == .int4Mixed
+        self == .qint8All || self == .int4All || isMixedPreset
+    }
+
+    /// AR path, embeddings and head at `descriptor.bits`, NAR path at 8 bits.
+    public var isMixedPreset: Bool {
+        self == .int4Mixed || self == .int3Mixed || self == .int2Mixed
     }
 
     public var displayName: String {
         guard let descriptor else { return "none (bf16)" }
-        if self == .int4Mixed { return "\(rawValue) (AR/embed 4-bit, NAR 8-bit, group \(descriptor.groupSize))" }
+        if isMixedPreset { return "\(rawValue) (AR/embed \(descriptor.bits)-bit, NAR 8-bit, group \(descriptor.groupSize))" }
         return "\(rawValue) (\(descriptor.bits)-bit, group \(descriptor.groupSize))"
     }
 }
@@ -80,7 +92,7 @@ enum YuE2QuantizationFilter {
     /// `nar_*` paths, which get 8 bits instead of 4 (E2 resolution — see the file-level comment).
     static func descriptor(for path: String, quantization: YuE2Quantization) -> (bits: Int, groupSize: Int)? {
         guard let base = quantization.descriptor else { return nil }
-        guard quantization == .int4Mixed else { return base }
+        guard quantization.isMixedPreset else { return base }
         let isNAR = path.split(separator: ".").map(String.init).contains(where: { $0.hasPrefix("nar_") })
         return isNAR ? (8, base.groupSize) : base
     }

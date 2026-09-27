@@ -54,6 +54,19 @@ One pass (traces `.local-runs/bench.noindex/ref-20260926-2300-*`). The A/B/B/A c
 | 8-bit, dequantized NAR | 75.4-76.5 s | 67.3 s | — | — |
 | 8-bit, packed NAR | 83.5-86.2 s | — | 64.4 s | — |
 
+### 2-bit and 3-bit AR paths (measured, not adopted)
+
+`int3-mixed` / `int2-mixed` presets (AR path, embeddings and head at 3 / 2 bits, NAR kept at 8 bits), lean profile, 64-frame VAE tile, adaptive limits, 70 s song:
+
+| Preset | Pack | Time | Peak process | LM parity vs bf16 (logits ABC / semantic rel) | ABC score |
+|---|---|---|---|---|---|
+| int4-mixed (shipped) | 2.5 GB | 73.5 s | 3 397 MB | 0.010 / 0.042 | 14 bars |
+| int3-mixed | 2.3 GB | 73.6 s | 3 167 MB | 0.053 / 0.043 | 14 bars (same as 4-bit) |
+| int2-mixed | 2.0 GB | 84.0 s | 2 969 MB | 0.072 / 0.068 | 60 bars: diverged on the same seed |
+| int4-mixed, 256 MB cache, 3 GB threshold | 2.5 GB | 94.8 s | **2 580 MB** | as 4-bit | unchanged |
+
+The NAR (8-bit, 1.43 GB) dominates the packs, so lower AR bits buy 0.2-0.4 GB at most; the VAE tile and the cache limit buy more (−0.8 GB for +29 % time) with no quality change. No 2-bit profile; 3-bit only after listening.
+
 ### AR phases: dispatch-bound, not compute-bound
 
 Clean traces (21 September): plan phase at 54-62 % of one core and 68-78 % GPU, semantic phase at 96 % of one core and 72-79 % GPU, NAR at 2 % CPU and 79 % GPU. Semantic phase alone (8-bit, 600 tokens): 114 tok/s where memory bandwidth would allow ≈ 270. The preallocated KV cache (v1.0.0) brought CPU down to 2.2 s user + 0.9 s sys for 6 s of wall time; the compiled decode step brought nothing (103-113 tok/s against 114-115) and is enabled nowhere.
