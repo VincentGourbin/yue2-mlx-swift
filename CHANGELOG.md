@@ -2,6 +2,11 @@
 
 Published versions are squashed commits on `main` (the working history stays local); each version has a tag and a GitHub release.
 
+## 1.1.0 — 2026-09-27
+
+- **Published prequantized packs**: `int4-mixed-head` (2.5 GB), `qint8-all-head` (3.5 GB) and `int4-head` (4.4 GB) on Hugging Face (`VincentGOURBIN/yue2-mlx-packs`, CC-BY-NC-4.0 derivatives). `yue2 download --model <pack>|packs`, `ModelDownloader.download(pack:)` with SHA-256 verification, `YuE2Pack`, `YuE2ReferenceProfile.pack`; `yue2 references` prints each profile's download line. The first-use quantization (7.3 GB of bf16, minutes) is no longer needed for the six references.
+- Pack sizes in the docs corrected to the measured ones.
+
 ## 1.0.1 — 2026-09-27
 
 - Documentation and profile summaries in English; ten audio examples (AAC) attached to the release.

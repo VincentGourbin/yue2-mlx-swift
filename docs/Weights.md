@@ -25,13 +25,19 @@ The first use of a preset loads the whole bf16 checkpoint (7.3 GB), quantizes, w
 
 Pack parities (real fixtures, `yue2 parity lm|nar`): AR int4 greedy 8/8 on both phases, rel 0.0075; NAR 8-bit rel 0.049 over a 32-step solve (budget 0.10), validated by listening; NAR 4-bit rel 0.15, rejected.
 
-## Republishing reference packs on Hugging Face
+## The published packs (Hugging Face)
 
-To avoid local quantization (and 7.3 GB of bf16 on an iPhone), the reference packs can be published as derivatives, under the same CC-BY-NC-4.0 licence with attribution to m-a-p, non-commercial use. This repository does not do it: it is the author's decision and account.
+The three reference packs are published as derivatives at [`VincentGOURBIN/yue2-mlx-packs`](https://huggingface.co/VincentGOURBIN/yue2-mlx-packs), under the same CC-BY-NC-4.0 licence with attribution to m-a-p, non-commercial use: one folder per pack, the exported `model.safetensors` as is (metadata `format`, `quantization`, `quantize_head`, `bits`, `group_size`, `pe`) and its SHA-256 sidecar.
 
-Proposal: a `VincentGourbin/yue2-mlx-packs` repository with one folder per pack (`int4-mixed-head/`, `qint8-all-head/`, `int4-head/`), the exported `model.safetensors` as is (metadata `format`, `quantization`, `quantize_head`, `bits`, `group_size`, `pe`), a model-card `README.md`, and each file's SHA-256. `Scripts/publish-packs.sh` prepares the tree and prints the `hf upload` commands; it uploads nothing by itself.
+```bash
+yue2 download --model int4-mixed-head        # one pack (2.5 GB) — what 4bit-fast / 4bit-lean load
+yue2 download --model packs                  # all three (10.4 GB)
+yue2 references                              # prints the download line for each profile
+```
 
-Once published, `yue2 download --model packs` (to be written) would place them under `mlx-prequantized/`; the iOS app would download them on first launch (2.5 GB for `4bit-lean`).
+`ModelDownloader.download(pack:)` fetches the sidecar, then the weights (resumable), and refuses a file whose SHA-256 does not match; a pack already present and verified is skipped. Files land exactly where `LMWeightLoader.load` looks for the preset, so the first-use quantization never runs. `Scripts/publish-packs.sh` is what produced the staging tree and checksums (it uploads nothing by itself; `hf upload` did).
+
+In Swift: `YuE2ReferenceProfile.named("4bit-lean")!.pack` → `.int4MixedHead`; `try await ModelDownloader(modelsDir: dir).download(pack: .int4MixedHead)`. The iOS app can download the profile's pack on first launch instead of shipping it through Finder.
 
 ## Model card (draft)
 

@@ -2,7 +2,7 @@
 
 `yue2 references` lists them, `yue2 generate --reference <id>` applies one, `YuE2ReferenceProfile.all` exposes them to an app. Each one pins **every** setting that matters: weight pack, compute precision, how the NAR is computed, VAE decoder, weight residency, memory profile, ODE steps. Nothing is left to chance between two machines: a reference produces the same song for the same seed, and comparable time on comparable hardware.
 
-Source: `Sources/YuE2Core/Configuration/ReferenceProfiles.swift`. Measurements: [Benchmarks.md](Benchmarks.md). Audio: the [v1.0.1 release](https://github.com/VincentGourbin/yue2-mlx-swift/releases/tag/v1.0.1) carries the same 70 s techno-funk song rendered by each configuration (`swift-engine_technofunk_<id>.m4a`).
+Source: `Sources/YuE2Core/Configuration/ReferenceProfiles.swift`. Measurements: [Benchmarks.md](Benchmarks.md). Weights: `yue2 download --model <pack>` fetches the profile's prequantized pack from `VincentGOURBIN/yue2-mlx-packs` ([Weights.md](Weights.md)); `yue2 references` prints the line for each profile. Audio: the [v1.0.1 release](https://github.com/VincentGourbin/yue2-mlx-swift/releases/tag/v1.0.1) carries the same 70 s techno-funk song rendered by each configuration (`swift-engine_technofunk_<id>.m4a`).
 
 ## The table
 

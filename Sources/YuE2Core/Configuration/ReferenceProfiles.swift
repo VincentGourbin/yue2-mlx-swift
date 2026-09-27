@@ -31,6 +31,10 @@ public struct YuE2ReferenceProfile: Sendable, Identifiable, Equatable {
 
     public var id: String { "\(bits.rawValue)bit-\(kind.rawValue)" }
 
+    /// The published prequantized pack this profile loads (`yue2 download --model <pack>`), or
+    /// `nil` for the bf16 checkpoint.
+    public var pack: YuE2Pack? { YuE2Pack.matching(quant, quantizeHead: quantizeHead) }
+
     /// Applies the process-wide knobs (memory profile, NAR compute, compiled decode). The
     /// per-call ones (`quant`, `precision`, VAE, residency, ODE steps) are read by the caller.
     public func applyGlobalPolicy() {

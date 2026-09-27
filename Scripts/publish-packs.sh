@@ -2,11 +2,11 @@
 # Prepares the reference prequantized packs for a Hugging Face upload (docs/Weights.md) and
 # prints the `hf upload` commands. Never uploads by itself: publishing CC-BY-NC-4.0 derivatives
 # is the author's decision and account.
-# Usage: Scripts/publish-packs.sh [staging dir, default .local-runs/hf-packs] [repo id, default VincentGourbin/yue2-mlx-packs]
+# Usage: Scripts/publish-packs.sh [staging dir, default .local-runs/hf-packs] [repo id, default VincentGOURBIN/yue2-mlx-packs]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 : "${YUE2_MODELS_DIR:?export YUE2_MODELS_DIR first}"
-STAGE="${1:-.local-runs/hf-packs}"; REPO="${2:-VincentGourbin/yue2-mlx-packs}"
+STAGE="${1:-.local-runs/hf-packs}"; REPO="${2:-VincentGOURBIN/yue2-mlx-packs}"
 SRC="$YUE2_MODELS_DIR/YuE2-3B/mlx-prequantized"
 mkdir -p "$STAGE"
 for pack in int4-mixed-head qint8-all-head int4-head; do

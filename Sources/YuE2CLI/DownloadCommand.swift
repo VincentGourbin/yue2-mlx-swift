@@ -9,41 +9,58 @@ import YuE2Core
 struct DownloadCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "download",
-        abstract: "Download YuE2 checkpoints (LM and/or VAE) from HuggingFace."
+        abstract: "Download YuE2 checkpoints (LM, VAE) and prequantized packs from Hugging Face."
     )
 
     @Option(name: .long, help: "Directory to download checkpoints into (defaults to $YUE2_MODELS_DIR).")
     var modelsDir: String?
 
-    @Option(name: .long, help: "Comma-separated models to download: lm, vae, vae-legacy.")
+    @Option(name: .long, help: "Comma-separated targets: lm, vae, vae-legacy, packs (all three prequantized packs), or a pack name (int4-mixed-head, qint8-all-head, int4-head).")
     var model: String = "lm,vae"
 
     func run() async throws {
         let dir = try resolveModelsDir(modelsDir)
-        let models = try Self.parseModels(model)
+        let targets = try Self.parseTargets(model)
         let downloader = ModelDownloader(modelsDir: dir)
         let throttle = PercentThrottle()
-        for target in models {
-            print("\(target.rawValue) — \(target.license.name) (\(target.license.allowsCommercialUse ? "commercial use allowed" : "non-commercial only")): \(target.license.url)")
-            try await downloader.download(target) { progress in
-                guard progress.totalBytes > 0 else { return }
-                let percent = Int(100 * Double(progress.writtenBytes) / Double(progress.totalBytes))
-                guard percent % 5 == 0, throttle.shouldReport(file: progress.file, percent: percent) else { return }
-                print("  [\(progress.fileIndex + 1)/\(progress.fileCount)] \(progress.file): \(percent)%")
+        let report: @Sendable (DownloadProgress) -> Void = { progress in
+            guard progress.totalBytes > 0 else { return }
+            let percent = Int(100 * Double(progress.writtenBytes) / Double(progress.totalBytes))
+            guard percent % 5 == 0, throttle.shouldReport(file: progress.file, percent: percent) else { return }
+            print("  [\(progress.fileIndex + 1)/\(progress.fileCount)] \(progress.file): \(percent)%")
+        }
+        for target in targets {
+            switch target {
+            case .model(let model):
+                print("\(model.rawValue) — \(model.license.name) (\(model.license.allowsCommercialUse ? "commercial use allowed" : "non-commercial only")): \(model.license.url)")
+                try await downloader.download(model, progress: report)
+            case .pack(let pack):
+                print("\(YuE2Pack.repoID)/\(pack.rawValue) (\(pack.approximateBytes / 1_000_000_000) GB) — \(pack.license.name), derivative of m-a-p/YuE2-3B, non-commercial only: \(pack.license.url)")
+                try await downloader.download(pack: pack, progress: report)
+                print("  verified: SHA-256 matches \(pack.rawValue)/model.safetensors.sha256")
             }
         }
         print("Download complete: \(dir.path)")
     }
 
-    private static func parseModels(_ raw: String) throws -> [YuE2Model] {
-        try raw.split(separator: ",").map { token in
+    enum Target { case model(YuE2Model), pack(YuE2Pack) }
+
+    static func parseTargets(_ raw: String) throws -> [Target] {
+        var targets: [Target] = []
+        for token in raw.split(separator: ",") {
             switch token.trimmingCharacters(in: .whitespaces) {
-            case "lm": return .lm
-            case "vae": return .vae
-            case "vae-legacy": return .vaeLegacy
-            case let unknown: throw ValidationError("Unknown model '\(unknown)': expected lm, vae, vae-legacy")
+            case "lm": targets.append(.model(.lm))
+            case "vae": targets.append(.model(.vae))
+            case "vae-legacy": targets.append(.model(.vaeLegacy))
+            case "packs": targets.append(contentsOf: YuE2Pack.allCases.map(Target.pack))
+            case let name:
+                guard let pack = YuE2Pack(rawValue: name) else {
+                    throw ValidationError("Unknown target '\(name)': expected lm, vae, vae-legacy, packs, or a pack name (\(YuE2Pack.allCases.map(\.rawValue).joined(separator: ", ")))")
+                }
+                targets.append(.pack(pack))
             }
         }
+        return targets
     }
 }
 

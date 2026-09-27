@@ -20,6 +20,7 @@ struct ReferencesCommand: ParsableCommand {
                     + " residency=\(p.releaseWeightsBetweenStages ? "stage" : "all") memory=\(p.memoryProfile == .mobile ? "mobile" : "mac")"
                     + " ode=\(p.odeSteps.map(String.init) ?? "32")")
             print("            \(p.summary)")
+            print("            weights: " + (p.pack.map { "yue2 download --model \($0.rawValue)  (\(YuE2Pack.repoID), \($0.approximateBytes / 1_000_000_000) GB)" } ?? "yue2 download --model lm  (m-a-p/YuE2-3B, bf16, 7.3 GB)"))
         }
     }
 }

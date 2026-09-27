@@ -11,7 +11,7 @@ Swift / MLX port of **YuE2** (m-a-p, September 2026) for Apple Silicon: lyrics a
 | [Command line](docs/CLI.md) | every `yue2` command and option |
 | [Swift API](docs/API.md) | `ModelSession`, `YuE2Pipeline`, residency, checkpoints, GPU gate, VAE backends |
 | [iPhone](docs/iOS.md) | integration, losing the GPU in the background, on-device measurements |
-| [Weights and packs](docs/Weights.md) | download, prequantized packs, licence, republishing |
+| [Weights and packs](docs/Weights.md) | download, the published prequantized packs, licence |
 | [Engineering knowledge base](docs/knowledge/index.md) | measurement log, decisions and verified pitfalls (OKF, in French, readable by humans and agents) |
 | [Changelog](CHANGELOG.md) | 0.1 → 1.0.0 |
 
@@ -28,9 +28,9 @@ Requirements: macOS 15+ (macOS 27 for Core AI), Xcode 26+ (Swift 6), Apple Silic
 xcodebuild -scheme yue2 -configuration Release -derivedDataPath .xcodebuild build
 BIN=.xcodebuild/Build/Products/Release/yue2
 
-# weights (Hugging Face, CC-BY-NC-4.0) and tokenizer
+# weights (Hugging Face, CC-BY-NC-4.0) and tokenizer, plus the 4-bit reference pack (2.5 GB)
 export YUE2_MODELS_DIR=$HOME/Library/Caches/models
-$BIN download --models-dir $YUE2_MODELS_DIR
+$BIN download --models-dir $YUE2_MODELS_DIR --model lm,vae,int4-mixed-head
 $BIN info
 
 # a full song with a reference configuration
@@ -38,7 +38,7 @@ $BIN references
 $BIN generate --request reference/yue/examples/song.json --reference 4bit-fast --out outputs/song --profile
 ```
 
-The first use of a quantized pack produces it locally (a few minutes, once). The request file follows the reference format: `style`, `lyrics` (with `[Verse]`, `[Chorus]`… tags), `cot`, `seed`, optional `abc`. The run's artifacts (`score.abc`, `semantic.npy`, `latent.npy`, `audio.wav`, `result.json`, `trace.json`) go to `--out`.
+The three reference packs are published at `VincentGOURBIN/yue2-mlx-packs` (`--model packs` fetches all of them, 10.4 GB); any other quantized preset is produced locally on first use (a few minutes, once). The request file follows the reference format: `style`, `lyrics` (with `[Verse]`, `[Chorus]`… tags), `cot`, `seed`, optional `abc`. The run's artifacts (`score.abc`, `semantic.npy`, `latent.npy`, `audio.wav`, `result.json`, `trace.json`) go to `--out`.
 
 Stage by stage, each one resumable:
 

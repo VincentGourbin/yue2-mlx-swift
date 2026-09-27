@@ -40,6 +40,42 @@ public actor ModelDownloader {
         }
     }
 
+    /// Downloads `pack` (its `.sha256` sidecar first, then the weights) into
+    /// `modelsDir/YuE2-3B/mlx-prequantized/<pack>/`, skipping a weights file that is already
+    /// present and matches the sidecar; a present file that does not match is re-downloaded.
+    /// Throws `.weightMismatch` when the downloaded file's SHA-256 differs from the sidecar.
+    public func download(pack: YuE2Pack, progress: @Sendable @escaping (DownloadProgress) -> Void = { _ in }) async throws {
+        let dir = modelsDir.appendingPathComponent(pack.localDirectory)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let shaURL = dir.appendingPathComponent("model.safetensors.sha256")
+        let weightsURL = dir.appendingPathComponent("model.safetensors")
+        let files = pack.files
+        try await downloadOne(repoID: YuE2Pack.repoID, remotePath: files[1], to: shaURL) { written, total in
+            progress(DownloadProgress(file: files[1], fileIndex: 0, fileCount: files.count, writtenBytes: written, totalBytes: total))
+        }
+        if FileManager.default.fileExists(atPath: weightsURL.path), try verify(pack: pack) { return }
+        try? FileManager.default.removeItem(at: weightsURL)
+        try await downloadOne(repoID: YuE2Pack.repoID, remotePath: files[0], to: weightsURL) { written, total in
+            progress(DownloadProgress(file: files[0], fileIndex: 1, fileCount: files.count, writtenBytes: written, totalBytes: total))
+        }
+        guard try verify(pack: pack) else {
+            throw YuE2Error.weightMismatch("\(pack.rawValue)/model.safetensors: SHA-256 does not match its .sha256 sidecar")
+        }
+    }
+
+    /// `true` when the pack's weights are present and their SHA-256 matches the sidecar;
+    /// `false` when either file is missing or the hashes differ.
+    public func verify(pack: YuE2Pack) throws -> Bool {
+        let dir = modelsDir.appendingPathComponent(pack.localDirectory)
+        let weightsURL = dir.appendingPathComponent("model.safetensors")
+        let shaURL = dir.appendingPathComponent("model.safetensors.sha256")
+        guard FileManager.default.fileExists(atPath: weightsURL.path),
+            let expected = try? String(contentsOf: shaURL, encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines).split(separator: " ").first
+        else { return false }
+        return try Self.sha256Hex(of: weightsURL).caseInsensitiveCompare(String(expected)) == .orderedSame
+    }
+
     /// Existence of every expected file, plus `"model.safetensors.sha256"` when
     /// `weights_manifest.json` and the weights file are both present.
     public func verify(_ model: YuE2Model) throws -> [String: Bool] {
@@ -99,6 +135,9 @@ public actor ModelDownloader {
         }
         return sha
     }
+
+    /// Test seam for the pack verification (`CatalogTests`).
+    public static func sha256HexForTesting(of url: URL) throws -> String { try sha256Hex(of: url) }
 
     private static func sha256Hex(of url: URL) throws -> String {
         let handle = try FileHandle(forReadingFrom: url)

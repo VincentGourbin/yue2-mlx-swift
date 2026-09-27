@@ -68,10 +68,12 @@ yue2 decode     --latents run/song/latent.npy --out run/song/audio.wav --precisi
 
 ```bash
 yue2 download --models-dir $YUE2_MODELS_DIR            # lm,vae ; --model lm,vae,vae-legacy
+yue2 download --model int4-mixed-head                  # a published prequantized pack (2.5 GB)
+yue2 download --model packs                            # all three packs (10.4 GB)
 yue2 info
 ```
 
-Weights `m-a-p/YuE2-3B` and `m-a-p/YuE2-Vae` (CC-BY-NC-4.0), tokenizer converted from `Qwen/Qwen2.5-0.5B`. Prequantized packs are created on the first use of a preset (`$YUE2_MODELS_DIR/YuE2-3B/mlx-prequantized/<preset>[-head]/`) — see [Weights.md](Weights.md).
+Weights `m-a-p/YuE2-3B` and `m-a-p/YuE2-Vae` (CC-BY-NC-4.0), tokenizer converted from `Qwen/Qwen2.5-0.5B`. The reference packs (`int4-mixed-head`, `qint8-all-head`, `int4-head`) come from `VincentGOURBIN/yue2-mlx-packs`, verified by SHA-256, and land under `$YUE2_MODELS_DIR/YuE2-3B/mlx-prequantized/<pack>/`; any other preset is quantized locally on first use — see [Weights.md](Weights.md).
 
 ## `references`
 
