@@ -12,7 +12,7 @@ Source: `Sources/YuE2Core/Configuration/ReferenceProfiles.swift`. Measurements: 
 |---|---|---|---|---|---|
 | `4bit-fast` | `int4-mixed-head` (2.5 GB) | everything resident, NAR dequantized to bf16, VAE fp16 tile 1024, Mac caches | **65.7 s** | 8.9 GB | Mac: the only profile faster than real time at 32 steps |
 | `4bit-lean` | `int4-mixed-head` | stage-scoped residency, packed NAR, fp16, VAE fp16 tile 256, mobile limits | 77.7 s | **3.4 GB** | iPhone 15 Pro Max and any 8 GB Mac |
-| `8bit-fast` | `qint8-all-head` (3.7 GB) | everything resident, NAR dequantized to bf16, VAE fp16/1024 | 76.5 s | 9.9 GB | Mac, when the AR path must stay 8-bit |
+| `8bit-fast` | `qint8-all-head` (3.5 GB) | everything resident, NAR dequantized to bf16, VAE fp16/1024 | 76.5 s | 9.9 GB | Mac, when the AR path must stay 8-bit |
 | `8bit-lean` | `qint8-all-head` | residency, packed NAR, fp16, VAE fp16/256, mobile limits | 79.3 s | 4.4 GB | iPhone 8 GB with headroom, 8-16 GB Macs |
 | `16bit-fast` | bf16 (7.3 GB) | everything resident, VAE fp16/1024 | 84.9 s | 12.0 GB | quality reference |
 | `16bit-lean` | bf16 | stage-scoped residency, VAE fp16/256, Mac caches | 84.9 s | 6.9 GB | 16-24 GB Macs |
@@ -36,7 +36,7 @@ Quick read: 4-bit is fastest because the autoregressive phases (score, then sema
 - **Mac, 32 GB and up**: `4bit-fast`. If you want the AR path in 8 bits: `8bit-fast`. For a quality reference: `16bit-fast`.
 - **Mac, 16-24 GB**: `16bit-lean` (6.9 GB), or `8bit-lean` / `4bit-lean` when other apps are running.
 - **8 GB Mac, iPhone**: `4bit-lean` (3.4 GB). `8bit-lean` also fits (4.4 GB) on an iPhone 15 Pro Max with the increased-memory entitlement.
-- **Even faster, memory no object**: outside the six, `--quant int4 --quant-head` (4-bit AR path, bf16 NAR, `int4-head` pack, 3.5 GB) gives 66-69 s; it is the candidate for a seventh profile.
+- **Even faster, memory no object**: outside the six, `--quant int4 --quant-head` (4-bit AR path, bf16 NAR, `int4-head` pack, 4.4 GB) gives 66-69 s; it is the candidate for a seventh profile.
 
 ## Adding or changing a profile
 

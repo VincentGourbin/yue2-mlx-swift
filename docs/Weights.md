@@ -17,8 +17,8 @@
 | Pack | Content | Size | Profiles |
 |---|---|---|---|
 | `int4-mixed-head` | AR path, embeddings, head in 4 bits (group 64, affine), NAR path in 8 bits, `latent_pos_embed.pe` recomputed | 2.5 GB | `4bit-fast`, `4bit-lean` |
-| `qint8-all-head` | everything in 8 bits (group 64) | 3.7 GB | `8bit-fast`, `8bit-lean` |
-| `int4-head` | AR path, embeddings, head in 4 bits, NAR bf16 | 3.5 GB | the fastest (66-69 s), candidate for a seventh profile |
+| `qint8-all-head` | everything in 8 bits (group 64) | 3.5 GB | `8bit-fast`, `8bit-lean` |
+| `int4-head` | AR path, embeddings, head in 4 bits, NAR bf16 | 4.4 GB | the fastest (66-69 s), candidate for a seventh profile |
 | `qint8`, `qint8-head`, `int4`, `int4-all-head` | measurement variants | 2.4-5.5 GB | — |
 
 The first use of a preset loads the whole bf16 checkpoint (7.3 GB), quantizes, writes the export and carries on: several minutes and an 8-14 GB peak, once per machine. Later loads read the export directly (`LMWeightLoader.load`), including branch by branch for stage-scoped residency.
@@ -43,8 +43,8 @@ https://github.com/VincentGourbin/yue2-mlx-swift (MIT). Non-commercial use, attr
 
 | Pack | Bits | Size | Profiles | Parity |
 | int4-mixed-head | AR/embed/head 4, NAR 8 | 2.5 GB | 4bit-fast, 4bit-lean | AR greedy 8/8; NAR rel 0.049 (32 steps) |
-| qint8-all-head | 8 throughout | 3.7 GB | 8bit-fast, 8bit-lean | AR rel 0.005; NAR rel 0.027 |
-| int4-head | AR/embed/head 4, NAR bf16 | 3.5 GB | (fast) | AR greedy 8/8 |
+| qint8-all-head | 8 throughout | 3.5 GB | 8bit-fast, 8bit-lean | AR rel 0.005; NAR rel 0.027 |
+| int4-head | AR/embed/head 4, NAR bf16 | 4.4 GB | (fast) | AR greedy 8/8 |
 
 Format: MLX safetensors (packed uint32 weights + scales + biases, group 64, affine), metadata
 `format=yue2-prequantized-v1`. Loading: `yue2 generate --reference <profile>` or

@@ -58,7 +58,7 @@ public struct YuE2ReferenceProfile: Sendable, Identifiable, Equatable {
             bits: .eight, kind: .fast, quant: .qint8All, quantizeHead: true, precision: .bf16,
             narCompute: .dequantized, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 1024,
             releaseWeightsBetweenStages: false, memoryProfile: .mac, odeSteps: nil,
-            summary: "qint8-all-head pack (3.7 GB), everything resident, NAR dequantized to bf16"),
+            summary: "qint8-all-head pack (3.5 GB), everything resident, NAR dequantized to bf16"),
         YuE2ReferenceProfile(
             bits: .eight, kind: .lean, quant: .qint8All, quantizeHead: true, precision: .fp16,
             narCompute: .packed, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 256,

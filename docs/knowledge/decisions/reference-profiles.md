@@ -15,4 +15,4 @@
 
 **Choix motivés** : les profils rapides dé-quantifient le NAR en bf16 pour le solve (le matmul 8 bits est plus lent qu'un GEMM bf16 sur les grandes activations ; écart rel mesuré 1,3 % vs packé, sous le budget E2, à écouter) ; les profils économes gardent le NAR packé, la résidence par étape, fp16 et la tuile VAE 256 avec les limites mobiles adaptatives ; `16bit-lean` garde les caches Mac (les limites mobiles font thrasher un working set bf16 : 98-135 s). Le pas de décodage compilé a été mesuré sans gain et n'est activé nulle part.
 
-**Ouvert** : un septième pack « int4-head + NAR bf16 » (66,1 s, 3,5 Go sur disque) ; le pas d'ODE par défaut (24 met le 8 bits sous 70 s) ; la republication Hugging Face des packs `int4-mixed-head`, `qint8-all-head` (et `int4-head`) — décisions listées dans `.local-runs/a-valider-2026-09-27/README.md`.
+**Ouvert** : un septième pack « int4-head + NAR bf16 » (66,1 s, 4,4 Go sur disque) ; le pas d'ODE par défaut (24 met le 8 bits sous 70 s) ; la republication Hugging Face des packs `int4-mixed-head`, `qint8-all-head` (et `int4-head`) — décisions listées dans `.local-runs/a-valider-2026-09-27/README.md`.
