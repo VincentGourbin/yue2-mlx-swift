@@ -1,8 +1,6 @@
 # yue2-mlx-swift
 
-[![Website](https://img.shields.io/badge/vinceforge.com-PocketAnthem-blue)](https://vinceforge.com) [![Featured in awesome-YuE](https://img.shields.io/badge/featured_in-awesome--YuE-orange)](https://github.com/RevolutionLA/awesome-YuE) [![Release](https://img.shields.io/github/v/release/VincentGourbin/yue2-mlx-swift)](https://github.com/VincentGourbin/yue2-mlx-swift/releases) [![License: MIT](https://img.shields.io/badge/code-MIT-green)](LICENSE)
-
-<a href="https://www.buymeacoffee.com/fluxforgestudio"><img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=&slug=fluxforgestudio&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff" /></a>
+[![Website](https://img.shields.io/badge/vinceforge.com-PocketAnthem-blue)](https://vinceforge.com) [![Featured in awesome-YuE](https://img.shields.io/badge/featured_in-awesome--YuE-orange)](https://github.com/RevolutionLA/awesome-YuE) [![Release](https://img.shields.io/github/v/release/VincentGourbin/yue2-mlx-swift)](https://github.com/VincentGourbin/yue2-mlx-swift/releases) [![License: MIT](https://img.shields.io/badge/code-MIT-green)](LICENSE) [![Buy Me a Coffee](https://img.shields.io/badge/Buy_me_a_coffee-fluxforgestudio-FFDD00?logo=buymeacoffee&logoColor=black)](https://www.buymeacoffee.com/fluxforgestudio)
 
 Swift / MLX port of **YuE2** (m-a-p, September 2026) for Apple Silicon: lyrics and style → editable ABC score → semantic tokens → acoustic latents by flow matching → 48 kHz stereo song. The whole pipeline runs locally on a Mac or an iPhone 15 Pro Max, with no Python at inference time.
 
