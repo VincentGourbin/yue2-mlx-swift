@@ -75,6 +75,29 @@ public struct NARCheckpoint { chunkIndex, step, steps, state: MLXArray
     func save(to: URL) throws; static func load(from: URL) throws -> NARCheckpoint?; static func clear(in: URL) }
 ```
 
+## Audio in and song edits
+
+The model has no audio understanding at inference; its entries are its own artifacts. `YuE2Pipeline+Edit.swift` exposes the two edits an app needs, `MelodyTranscriber` turns a recording into the plan.
+
+```swift
+// hummed / sung melody → ABC score → song on that melody
+let samples = try AudioImporter.loadAudio(url: recording)                     // [1, n, 2] fp32 at 48 kHz, or [Float]
+var options = MelodyTranscriber.Options(); options.bpm = 110                   // tempo of the recording, section label, note floor
+let melody = MelodyTranscriber.transcribe(audio: samples, sampleRate: 48_000, options: options)
+melody.notes            // [MelodyNote(midi:startSixteenth:lengthSixteenths:)], melody.key, melody.voicedRatio
+var request = SongRequest(style: style, lyrics: lyrics); request.abc = melody.abc   // the score is the plan, no planner run
+let song = try await pipeline.generate(request: request)
+
+// variation: same score, same tokens, SDEdit on the latents (strength 0 = unchanged, 1 = fresh)
+let variation = try await pipeline.vary(song, strength: 0.4, seed: 2, onEvent: onEvent)
+// "regenerate from here": keep up to a frame (40 ms), re-sample the tokens after it, solve against the kept part
+let ending = try await pipeline.regenerate(song, fromFrame: 20 * 25, seed: 3, onEvent: onEvent)   // length: .keepSource by default, .free lets the AR decide
+
+let saved = try SongResult.load(from: directory)                               // a generate --out directory, for later edits
+```
+
+Underneath: `SemanticGenerator.generateSemantic(plan:sampling:continuation:onToken:cancel:)` takes the kept tokens as the AR's past; `Synthesizer.synthesize(... edit: NAREdit?)` with `.variation(latents:strength:)` (start state `noise·t + latents·(1−t)`, `round((1−strength)·steps)` steps skipped) or `.keep(latents:frames:)` (kept frames re-imposed after every step, returned bit-exact); `CachedNAR.solve(... keep:)` is the inpainting mask. `MelodyTranscriber` is pure CPU (vDSP), deterministic, tested on synthetic tones; `NAREditTests` covers the two edits on the tiny model.
+
 ## Losing the GPU in the background (iOS)
 
 iOS refuses every GPU submission from an app that is not in the foreground, and mlx-core raises the error inside the Metal completion handler, where it cannot be caught. The engine stops before that:
@@ -130,4 +153,4 @@ See [References.md](References.md) for the six and their measurements.
 
 ## Tests
 
-`Scripts/run-tests.sh` (swift-testing, parallelization 1: a known deadlock in mlx-swift). Two tiers: weight-free (tiny fixtures under `parity/`, always green, 149 tests) and real weights (`YUE2_MODELS_DIR`, suites `Real*`, `Quantization`, `GenerationSmoke`). Every numerical change goes through `RealLMParityTests` (greedy 8/8 on both phases) and `RealNARParityTests`.
+`Scripts/run-tests.sh` (swift-testing, parallelization 1: a known deadlock in mlx-swift). Two tiers: weight-free (tiny fixtures under `parity/`, always green, 156 tests) and real weights (`YUE2_MODELS_DIR`, suites `Real*`, `Quantization`, `GenerationSmoke`). Every numerical change goes through `RealLMParityTests` (greedy 8/8 on both phases) and `RealNARParityTests`.

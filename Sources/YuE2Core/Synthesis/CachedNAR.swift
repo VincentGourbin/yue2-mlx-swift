@@ -91,7 +91,8 @@ public final class CachedNAR {
         onProgress: ((Int, Int) -> Void)? = nil,
         cancel: (() -> Bool)? = nil,
         onVelocityCall: (() -> Void)? = nil,
-        onStep: ((_ completedStep: Int, _ state: MLXArray) -> Void)? = nil
+        onStep: ((_ completedStep: Int, _ state: MLXArray) -> Void)? = nil,
+        keep: (frames: Int, latents: MLXArray)? = nil
     ) throws -> MLXArray {
         guard steps >= 1 else {
             throw YuE2Error.invalidRequest("steps must be a positive integer")
@@ -115,6 +116,16 @@ public final class CachedNAR {
             onVelocityCall?()
             let second = velocity(state: mid, rawT: Self.clampedLogit(t - dt / 2))
             state = state - second * MLXArray(Float(dt)).asType(dtype)
+            if let keep, keep.frames > 0 {
+                // Temporal inpainting (RePaint-lite): the kept frames are re-imposed at every
+                // step as the training interpolant `t·noise + (1-t)·data` at the *next* time, so
+                // the free frames are solved against the known ones; at t = 0 they are the data.
+                let tNext = Float(1.0 - Double(step + 1) * dt)
+                let frames = min(keep.frames, state.dim(0))
+                let kept = noise[0..<frames, 0...].asType(dtype) * MLXArray(tNext).asType(dtype)
+                    + keep.latents[0..<frames, 0...].asType(dtype) * MLXArray(1 - tNext).asType(dtype)
+                state[0..<frames, 0...] = kept
+            }
             eval(state)
             onStep?(step + 1, state)
             onProgress?(step + 1, steps)

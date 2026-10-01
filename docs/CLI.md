@@ -14,7 +14,10 @@ Binary produced by `xcodebuild -scheme yue2 -configuration Release -derivedDataP
 | `synthesize` | NAR + VAE from saved plan and tokens (stages 3-4), with per-step checkpoints |
 | `decode` | latents `.npy` → WAV (VAE alone, MLX or Core AI) |
 | `encode` | audio → latents (VAE encoder), optional round trip |
-| `references` | lists the six reference configurations |
+| `references` | lists the reference configurations |
+| `melody` | hummed or sung recording → ABC score the model takes as its plan |
+| `vary` | variation of a saved song (same score and tokens, SDEdit on its latents) |
+| `regenerate` | keeps a saved song up to a point in time, regenerates the rest |
 | `parity vae|lm|nar` | numerical parity against the PyTorch dumps |
 | `profile plan|semantic` | profile of one AR phase (TTFT, tok/s, memory, trace) |
 | `bench-coreai-nar` | NAR MLX against Core AI GPU/ANE, time and footprint |
@@ -95,6 +98,26 @@ yue2 bench-coreai-nar --frames 256,1024 --backends mlx,coreai-gpu --quant int4-m
 ```
 
 Real fixtures come from `Scripts/reference/real_fixtures.py {vae|lm|nar|song}` (Python environment from `Scripts/setup-reference-env.sh`). Verdicts: `PARITY OK …` / `PARITY FAILED …` on the last line.
+
+## Audio in: `melody`, `vary`, `regenerate`
+
+The model has no audio understanding at inference (MERT2 and SheetSage2 are training-time only). What it does accept is its own artifacts: an ABC score as the plan, semantic tokens as the AR past, latents as the start state of the acoustic solve. The three commands feed those entries from a recording or from a previous run.
+
+```bash
+# 1. hum or sing a melody (mono, any format AVFoundation reads), 100 BPM by default
+yue2 melody --audio hum.m4a --bpm 110 --out run/melody        # writes melody.abc + melody.json, prints the score
+# 2. the song follows that melody: the score is the plan, the AR only writes the tokens
+yue2 generate --request song.json --abc-file run/melody/melody.abc --reference 4bit-fast --out run/song
+
+# a variation of a saved song: same lyrics, same score, same tokens, new texture
+yue2 vary --song run/song --strength 0.4 --seed 2 --reference 4bit-fast --out run/song-v2
+# keep the first 20 s exactly, regenerate everything after (new tokens, acoustic solve against the kept part)
+yue2 regenerate --song run/song --from-seconds 20 --seed 3 --reference 4bit-fast --out run/song-alt-ending
+```
+
+`melody` runs on the CPU (YIN pitch tracking, median smoothing, quantization on a sixteenth grid at the given tempo, Krumhansl key estimate, one diatonic chord per bar) and writes the score in the model's dialect: `L:1/16`, `V: Vocal` carrying the melody, `V: Ins` resting (`Z<n>|`), one `% verse` section. The `melody.json` next to it lists the MIDI notes, their start and length in sixteenths, the key, the voiced ratio (below 0.3 the command warns: the recording carried little pitch). Edit the `.abc` by hand before `generate` if a note is wrong; the model's planner is skipped entirely when a score is imposed.
+
+`vary --strength` is the SDEdit ratio: 0 returns the source latents unchanged, 1 is a fresh synthesis; 0.3-0.5 keeps the arrangement and changes the texture, 0.6-0.8 drifts further. The solve runs `round(strength × steps)` steps instead of 32, so a 0.4 variation costs 40 % of a full NAR. `regenerate --from-seconds` is rounded to a 40 ms frame; the kept frames are re-imposed after every ODE step (RePaint-style mask) and returned bit-exact, the seam is continuous by construction. By default the regenerated song keeps the source's length (the AR is cut there if it has not ended the song); `--free-length` lets the AR decide, and a song re-conditioned on its first half readily grows to two or three times its length. Both read the `generate --out` directory (`plan.json`, `semantic.npy`, `latent.npy`, `config.json`) and write a full one. Single-chunk songs only.
 
 ## `encode`, `remix-experimental`
 

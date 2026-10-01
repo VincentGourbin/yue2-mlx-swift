@@ -92,6 +92,23 @@ public struct SongResult {
         try encoder.encode(manifest).write(to: directory.appendingPathComponent("result.json"))
     }
 
+    /// Reloads a run written by `saveArtifacts` — enough to edit it (`YuE2Pipeline.vary`,
+    /// `regenerate`): plan, semantic tokens, latents, audio, config; timings are not restored.
+    public static func load(from directory: URL) throws -> SongResult {
+        let plan = try SymbolicPlan.load(from: directory)
+        let tokens = try NumpyIO.readInt32(directory.appendingPathComponent("semantic.npy")).map(Int.init)
+        let latents = try NumpyIO.readArray(directory.appendingPathComponent("latent.npy"))
+        let config = try JSONDecoder().decode(GenerationConfig.self, from: Data(contentsOf: directory.appendingPathComponent("config.json")))
+        let audio = try AudioImporter.loadAudio(url: directory.appendingPathComponent("audio.wav"))
+        let zero = GenerationTiming(
+            seconds: 0, prefillSeconds: 0, ttftSeconds: 0, outputTokens: tokens.count, contentTokens: tokens.count,
+            outputTPS: 0, prefixTokens: plan.prefix.count, cfgBranches: 1)
+        let semantic = SemanticResult(plan: plan, tokens: tokens, timing: zero, truncated: false)
+        return SongResult(
+            audio: audio, sampleRate: 48_000, semantic: semantic, latents: latents, config: config,
+            timing: SongTiming(abc: nil, semantic: zero, narSeconds: 0, vaeSeconds: 0, e2eSeconds: 0))
+    }
+
     private static func collectHashes(in directory: URL) throws -> [String: String] {
         var hashes: [String: String] = [:]
         for name in try FileManager.default.contentsOfDirectory(atPath: directory.path) {

@@ -3,6 +3,18 @@
 
 import MLX
 
+/// An edit of an existing song's latents, applied by `Synthesizer.synthesize(edit:)` —
+/// single-chunk songs only, the same conditioning (plan, semantic tokens) as the source unless
+/// the caller changed it.
+public enum NAREdit {
+    /// SDEdit variation: start the solve from `t·noise + (1-t)·latents` at `t = strength`
+    /// (0 = the source untouched, 1 = a fresh generation), with this synthesis's own noise.
+    case variation(latents: MLXArray, strength: Double)
+    /// Keep the first `frames` frames of `latents` exactly (re-imposed at every step) and solve
+    /// the rest against them — "regenerate from here on".
+    case keep(latents: MLXArray, frames: Int)
+}
+
 /// Drives `CachedNAR` over every chunk of a song, serially, releasing each chunk's cache before
 /// starting the next (pitfall #8: never keep more than one chunk's KV cache alive at once).
 public struct Synthesizer {
@@ -38,6 +50,7 @@ public struct Synthesizer {
         onBeforeChunk: ((_ needsARPath: Bool) -> Void)? = nil,
         resume: NARCheckpoint? = nil,
         onStep: ((NARCheckpoint) -> Void)? = nil,
+        edit: NAREdit? = nil,
         cancel: (() -> Bool)? = nil
     ) throws -> MLXArray {
         YuE2MemoryManager.configure(for: .nar)
@@ -47,6 +60,24 @@ public struct Synthesizer {
             prefix: prefix, codec: codec, seed: seed, context: resolvedContext, noise: noise
         )
         let totalSteps = resolvedSteps * chunks.count
+        if let edit {
+            guard chunks.count == 1 else {
+                throw YuE2Error.invalidRequest("NAR edits are only supported for single-chunk songs (got \(chunks.count) chunks)")
+            }
+            guard resume == nil else { throw YuE2Error.invalidRequest("NAR edit and resume cannot be combined") }
+            let latents: MLXArray
+            switch edit {
+            case .variation(let l, let strength):
+                guard (0...1).contains(strength) else { throw YuE2Error.invalidRequest("variation strength must be in 0...1") }
+                latents = l
+            case .keep(let l, let frames):
+                guard frames >= 0, frames <= l.dim(0) else { throw YuE2Error.invalidRequest("keep frames out of range") }
+                latents = l
+            }
+            guard latents.shape == chunks[0].noise.shape else {
+                throw YuE2Error.invalidRequest("edit latents \(latents.shape) do not match this song's latents \(chunks[0].noise.shape)")
+            }
+        }
         if let resume {
             // Single-chunk songs only (every iPhone-length song): a multi-chunk resume would also
             // need the earlier chunks' latents, which this API does not carry.
@@ -82,10 +113,30 @@ public struct Synthesizer {
                     report(NARCheckpoint(chunkIndex: chunkIndex, step: completed, steps: resolvedSteps, state: state))
                 }
             }
+            var initialState = resume?.state
+            var startStep = resume?.step ?? 0
+            var keep: (frames: Int, latents: MLXArray)?
+            switch edit {
+            case .variation(let latents, let strength):
+                // t = 1 − s/steps ⇒ the step whose time is closest to `strength`.
+                startStep = min(resolvedSteps, max(0, Int(((1 - strength) * Double(resolvedSteps)).rounded())))
+                let t = Float(1.0 - Double(startStep) / Double(resolvedSteps))
+                let noise = chunk.noise.asType(.float32)
+                initialState = noise * t + latents.asType(.float32) * (1 - t)
+            case .keep(let latents, let frames):
+                keep = (frames, latents)
+            case nil:
+                break
+            }
+            if startStep >= resolvedSteps, let initialState {
+                // strength 0: nothing to solve, the source is the result.
+                outputs.append(initialState.asType(.float32))
+                continue
+            }
             outputs.append(try engine.solve(
                 steps: resolvedSteps,
-                initialState: resume?.state, startStep: resume?.step ?? 0,
-                onProgress: chunkProgress, cancel: cancel, onStep: stepCallback))
+                initialState: initialState, startStep: startStep,
+                onProgress: chunkProgress, cancel: cancel, onStep: stepCallback, keep: keep))
             YuE2MemoryManager.releaseBetweenStages()
         }
         return concatenated(outputs, axis: 0)

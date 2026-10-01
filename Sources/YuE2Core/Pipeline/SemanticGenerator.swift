@@ -42,8 +42,11 @@ public struct SemanticGenerator {
         self.config = config
     }
 
+    /// `continuation`: codec ids (NAR vocabulary, `[0, codecSize)`) already decided — kept as
+    /// is and fed to the model as its own past, so generation resumes after them ("regenerate
+    /// from here on"). The returned `tokens` include them.
     public func generateSemantic(
-        plan: SymbolicPlan, sampling: Sampling? = nil,
+        plan: SymbolicPlan, sampling: Sampling? = nil, continuation: [Int] = [],
         onToken: ((Int) -> Void)? = nil, cancel: (() -> Bool)? = nil
     ) throws -> SemanticResult {
         let expected = try Prefixes.tokenPrefixes(request: plan.request, tokenizer: tokenizer, abcIDs: plan.abcIDs)
@@ -51,7 +54,12 @@ public struct SemanticGenerator {
             throw YuE2Error.invalidRequest("Plan prefix disagrees with request/exact ABC IDs")
         }
 
-        let resolvedSampling = resolveSampling(sampling, default: config.semantic)
+        var resolvedSampling = resolveSampling(sampling, default: config.semantic)
+        if !continuation.isEmpty {
+            resolvedSampling.minTokens = max(0, resolvedSampling.minTokens - continuation.count)
+            resolvedSampling.maxTokens = max(1, resolvedSampling.maxTokens - continuation.count)
+        }
+        let prefix = plan.prefix + continuation.map { $0 + YuE2Token.codecOffset }
         let negative: [Int]? =
             plan.request.guidance != 1
             ? try Prefixes.negativePrefix(request: plan.request, tokenizer: tokenizer, abcIDs: plan.abcIDs)
@@ -61,12 +69,12 @@ public struct SemanticGenerator {
         let cache = KVCache()
 
         let result = try TokenGenerator.generate(
-            model: model, head: head, prefix: plan.prefix, sampling: resolvedSampling,
+            model: model, head: head, prefix: prefix, sampling: resolvedSampling,
             seed: UInt64(plan.request.seed), bounds: .semantic, negative: negative,
             cfgScale: plan.request.guidance, legacyOff: legacyOff, cache: cache,
             onToken: onToken, cancel: cancel)
 
-        let codecTokens = result.tokens.map { $0 - YuE2Token.codecOffset }
+        let codecTokens = continuation + result.tokens.map { $0 - YuE2Token.codecOffset }
         return SemanticResult(plan: plan, tokens: codecTokens, timing: result.timing, truncated: result.truncated, cache: cache)
     }
 }

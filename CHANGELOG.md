@@ -2,6 +2,12 @@
 
 Published versions are squashed commits on `main` (the working history stays local); each version has a tag and a GitHub release.
 
+## 1.3.0 — 2026-10-01
+
+- **Audio in, through the model's own entries** (issue #1 closed as a feature): `yue2 melody` transcribes a hummed or sung recording into an ABC score in the model's dialect (`MelodyTranscriber`, CPU: YIN pitch tracking, sixteenth-grid quantization at the given BPM, key and diatonic chords); `generate --abc-file` then follows that melody.
+- **Song edits** on a `generate --out` directory (`SongResult.load(from:)`): `yue2 vary` / `YuE2Pipeline.vary(_:strength:seed:)` (SDEdit variation, same score and tokens, `round(strength × steps)` ODE steps) and `yue2 regenerate` / `YuE2Pipeline.regenerate(_:fromFrame:seed:)` (kept part bit-exact, tokens after it re-sampled with the kept ones as the AR's past, RePaint-style mask in the solve); the source's length is kept by default (`RegenerateLength`, `--free-length` lets the AR decide — re-conditioned on its first half it readily grows the song ×2.5).
+- Engine: `NAREdit` (`.variation`, `.keep`) on `Synthesizer.synthesize`, `keep:` mask in `CachedNAR.solve`, `continuation:` on `SemanticGenerator.generateSemantic`.
+
 ## 1.2.0 — 2026-09-27
 
 - **`4bit-tiny` reference profile** for the most constrained devices: `4bit-lean` plus a 64-frame VAE tile and a fixed 256 MB cache / 3 GB threshold (`YuE2ReferenceProfile.mobileLimitsMB`, `YuE2MemoryManager.mobileLimitsOverrideMB`): 2.6 GB peak instead of 3.4, +29 % time, same audio. Seven profiles.

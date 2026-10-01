@@ -14,6 +14,7 @@ Mesures reproductibles (état des horloges GPU, écart ±2 %).
 ## Decisions
 Choix d'architecture motivés (pourquoi telle voie, tel dtype, tel cache).
 - [Six configurations de référence](decisions/reference-profiles.md) — 4/8/16 bits × rapide/économe, temps et pics sur 70 s, choix motivés, points ouverts.
+- [Entrée audio par les entrées natives du modèle](decisions/audio-input-via-model-entries.md) — mélodie fredonnée → ABC imposé, variation SDEdit, régénération avec masque ; mesures et pièges (YIN, longueur de l'AR).
 - [Résidence des poids par étape (iPhone)](decisions/stage-scoped-weight-residency.md) — le budget mémoire compte le max des étapes, pas leur somme ; implémentation MLX pure.
 
 ## Pitfalls

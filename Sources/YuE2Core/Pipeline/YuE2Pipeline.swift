@@ -19,11 +19,11 @@ public enum PipelineEvent: Sendable {
 /// Configures `YuE2MemoryManager`'s cache limit per stage and releases cached (not active) GPU
 /// memory between the NAR and VAE stages (pitfall #8).
 public final class YuE2Pipeline {
-    private let session: ModelSession
-    private let vae: any VAEDecoding
-    private let config: GenerationConfig
-    private let vaeCoreFrames: Int
-    private let releaseWeightsBetweenStages: Bool
+    let session: ModelSession
+    let vae: any VAEDecoding
+    let config: GenerationConfig
+    let vaeCoreFrames: Int
+    let releaseWeightsBetweenStages: Bool
 
     /// `vae`: any `VAEDecoding` backend — `YuE2VAE` (MLX) or `CoreAIVAEDecoder` (T-6.3, back in
     /// play since `planVAETiles` keeps its enumerated shapes exact). `vaeCoreFrames`: the VAE
