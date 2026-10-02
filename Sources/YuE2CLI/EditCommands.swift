@@ -23,6 +23,15 @@ struct MelodyCommand: AsyncParsableCommand {
     @Option(name: .long, help: "Section label written in the score (verse, chorus…).")
     var section: String = "verse"
 
+    @Option(name: .long, help: "Lowest pitch searched, Hz (70 for a voice).")
+    var minHz: Double = 70
+
+    @Option(name: .long, help: "Highest pitch searched, Hz (1000 for a voice; a whistle needs 2500).")
+    var maxHz: Double = 1000
+
+    @Option(name: .long, help: "Octaves added to every note, negative = down (default: automatic, the melody's median brought into the singing range).")
+    var octaveShift: Int?
+
     @Option(name: .long, help: "Output directory for melody.abc and melody.json.")
     var out: String
 
@@ -31,6 +40,9 @@ struct MelodyCommand: AsyncParsableCommand {
         var options = MelodyTranscriber.Options()
         options.bpm = bpm
         options.section = section
+        options.minHz = minHz
+        options.maxHz = maxHz
+        options.octaveShift = octaveShift
         let transcription = MelodyTranscriber.transcribe(audio: samples, sampleRate: 48_000, options: options)
         let dir = URL(fileURLWithPath: out)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

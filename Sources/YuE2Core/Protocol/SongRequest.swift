@@ -12,6 +12,9 @@ public struct SongRequest: Codable, Equatable, Sendable {
     public var cot: CoTMode
     public var seed: Int
     public var abc: String?
+    /// A beginning of score the planner continues from (header with key and tempo, first
+    /// sections…): forced as the first ABC tokens, the model writes the rest. Ignored with `abc`.
+    public var abcPrefix: String?
     public var cfgScale: Double?
     public var id: String
 
@@ -21,6 +24,7 @@ public struct SongRequest: Codable, Equatable, Sendable {
         cot: CoTMode = .full,
         seed: Int = 831_001,
         abc: String? = nil,
+        abcPrefix: String? = nil,
         cfgScale: Double? = nil,
         id: String = "song"
     ) throws {
@@ -45,6 +49,7 @@ public struct SongRequest: Codable, Equatable, Sendable {
         self.cot = cot
         self.seed = seed
         self.abc = abc
+        self.abcPrefix = abcPrefix
         self.cfgScale = cfgScale
         self.id = id
     }
@@ -77,6 +82,7 @@ public struct SongRequest: Codable, Equatable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case style, lyrics, cot, seed, abc
+        case abcPrefix = "abc_prefix"
         case cfgScale = "cfg_scale"
         case id
     }
@@ -93,6 +99,7 @@ public struct SongRequest: Codable, Equatable, Sendable {
             cot: cot,
             seed: container.decodeIfPresent(Int.self, forKey: .seed) ?? 831_001,
             abc: container.decodeIfPresent(String.self, forKey: .abc),
+            abcPrefix: container.decodeIfPresent(String.self, forKey: .abcPrefix),
             cfgScale: container.decodeIfPresent(Double.self, forKey: .cfgScale),
             id: container.decodeIfPresent(String.self, forKey: .id) ?? "song"
         )

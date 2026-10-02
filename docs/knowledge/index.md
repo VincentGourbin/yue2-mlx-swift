@@ -22,5 +22,9 @@ Pièges rencontrés et leur correctif, numérotés comme ceux de PLAN.md §9.
 - [Conversion de précision et voie non résidente](pitfalls/precision-cast-materializes-parked-branch.md) — `applyPrecision(.fp16)` matérialisait la voie NAR parquée (+1,44 Go, le pic iPhone) ; conversion restreinte aux clés résidentes.
 - [Core AI, formes énumérées : zéro-padding des latents](pitfalls/coreai-enumerated-shape-zero-padding.md) — la fin de tuile complétée par des zéros perd 34 dB ; fenêtres à forme exacte (`planVAETiles`).
 
+## Transmissions et mémoire
+- [Mémoire d'agent](agent-memory.md) — conventions de Vincent, état du projet, pièges durables : à lire en début de session.
+- [Transmission entrée audio (2026-10-02)](handover-audio-input-2026-10-02.md) — inpaint/ancrage d'un extrait réel réfutés à l'oreille ; la voie est symbolique (SheetSage2 → ABC → `cot melody`) ; état des commits locaux.
+
 ## Investigations
 Enquêtes en cours ou closes (deadlocks, dérives numériques, écarts de parité). Rien pour l'instant.

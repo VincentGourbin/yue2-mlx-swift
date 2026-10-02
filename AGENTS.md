@@ -78,3 +78,7 @@ En cas d'échec, la sortie contient les 20 premières lignes utiles ; le journal
 - Dépôt : `Sources/YuE2Core` (bibliothèque), `Sources/YuE2CLI` (`yue2`), `Sources/YuE2BenchUI`, `Tests/YuE2Tests`, `parity/` (fixtures tiny), `Scripts/`, `tasks/`, `reference/` (liens, non committés).
 - Poids : `$YUE2_MODELS_DIR/{YuE2-3B,YuE2-Vae,YuE2-Vae-legacy,parity}`. Jamais en dur.
 - Faits d'architecture : `plan/02.1-vocabulaire.md` … `plan/02.8-dtypes.md` (un fichier par section). Pièges : `plan/09-pieges.md` (16 points, cités par numéro dans les fiches).
+
+## 7. Mémoire durable (toute session, tout agent)
+
+`docs/knowledge/agent-memory.md` résume ce que l'agent principal garde en mémoire persistante (conventions de Vincent, état du projet, pièges) ; les transmissions par sujet sont dans `docs/knowledge/handover-*.md`. Sur l'entrée audio, lire `handover-audio-input-2026-10-02.md` avant toute fiche qui touche `YuE2Pipeline+Edit.swift` ou `MelodyTranscriber.swift` : l'inpaint d'un extrait réel est réfuté, la voie est symbolique.

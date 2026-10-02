@@ -2,6 +2,14 @@
 
 Published versions are squashed commits on `main` (the working history stays local); each version has a tag and a GitHub release.
 
+## 1.4.0 — 2026-10-02
+
+- **Covers from a recording, the upstream way**: SheetSage2 (Python, runs on Apple silicon through MPS) transcribes a mixed song into an ABC score; the song is generated on it with `cot: melody`. Recipe, Mac workarounds and measurements in [docs/CLI.md](docs/CLI.md#covers-from-a-recording-sheetsage2--abc--cot-melody).
+- **Forced beginning of score**: `SongRequest.abcPrefix` (`abc_prefix` in the request JSON) / `generate --abc-prefix-file`; the planner continues from the given header and sections in the same key and tempo — a transcribed chorus becomes the opening of a longer song.
+- **Whistled melodies**: `yue2 melody --min-hz/--max-hz/--octave-shift`, automatic octave shift into the singing range, short glides absorbed into the note they lead to.
+- Tried and dropped: keeping a real recording's VAE latents inside a generated song (inpainting, and anchoring it on the first ODE steps only). The model never hears the excerpt (the semantic audio tokenizer is not released), so it is a paste-in at best; not shipped.
+- Build commands now pass `-destination 'platform=macOS'` (required by the current `xcodebuild` for a Swift package).
+
 ## 1.3.0 — 2026-10-01
 
 - **Audio in, through the model's own entries** (issue #1 closed as a feature): `yue2 melody` transcribes a hummed or sung recording into an ABC score in the model's dialect (`MelodyTranscriber`, CPU: YIN pitch tracking, sixteenth-grid quantization at the given BPM, key and diatonic chords); `generate --abc-file` then follows that melody.

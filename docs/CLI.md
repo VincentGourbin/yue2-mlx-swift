@@ -1,6 +1,6 @@
 # `yue2` command line
 
-Binary produced by `xcodebuild -scheme yue2 -configuration Release -derivedDataPath .xcodebuild build` (never `swift build` for a binary: MLX's `default.metallib` would not be found). `yue2 <command> --help` always prints the full option list.
+Binary produced by `xcodebuild -scheme yue2 -configuration Release -destination 'platform=macOS' -derivedDataPath .xcodebuild build` (never `swift build` for a binary: MLX's `default.metallib` would not be found). `yue2 <command> --help` always prints the full option list.
 
 ## Commands
 
@@ -31,7 +31,7 @@ Common environment variables: `YUE2_MODELS_DIR` (checkpoints), `YUE2_MEMORY_PROF
 yue2 generate --request song.json --reference 4bit-fast --out run/ [--profile]
 ```
 
-The request file: `style`, `lyrics` (`[Verse]`, `[Chorus]`, `[Bridge]`, `[Outro]` tags), `cot` (`full`, `melody`, `off`), `seed`, `id`, optional `abc` (imposed score), optional `cfg_scale`.
+The request file: `style`, `lyrics` (`[Verse]`, `[Chorus]`, `[Bridge]`, `[Outro]` tags), `cot` (`full`, `melody`, `off`), `seed`, `id`, optional `abc` (imposed score, the planner is skipped), optional `abc_prefix` (forced beginning of the score, the planner writes the rest in the same key and tempo), optional `cfg_scale`.
 
 | Option | Default | Effect |
 |---|---|---|
@@ -48,6 +48,7 @@ The request file: `style`, `lyrics` (`[Verse]`, `[Chorus]`, `[Bridge]`, `[Outro]
 | `--abc-max-tokens`, `--abc-min-tokens`, `--semantic-max-tokens`, `--semantic-min-tokens` | checkpoint config | phase lengths; 25 semantic tokens = 1 s of audio (1 750 = 70 s) |
 | `--temperature`, `--top-p`, `--top-k` | checkpoint config | sampling for both phases |
 | `--style`, `--lyrics`, `--cot`, `--seed`, `--abc-file`, `--cfg-scale`, `--id` | — | override the request |
+| `--abc-prefix-file` | — | beginning of a score (header with key and tempo, first sections) the planner continues from; overrides the request's `abc_prefix` |
 | `--vae` | `standard` | `legacy` for the older VAE |
 | `--format` | `int16` | `float32` |
 | `--profile` | off | per-phase report, TTS metrics, `trace.json` in `--out` |
@@ -101,7 +102,7 @@ Real fixtures come from `Scripts/reference/real_fixtures.py {vae|lm|nar|song}` (
 
 ## Audio in: `melody`, `vary`, `regenerate`
 
-The model has no audio understanding at inference (MERT2 and SheetSage2 are training-time only). What it does accept is its own artifacts: an ABC score as the plan, semantic tokens as the AR past, latents as the start state of the acoustic solve. The three commands feed those entries from a recording or from a previous run.
+The model has no audio understanding at inference: the semantic audio tokenizer it was trained with is not released, so a recording cannot be turned into its tokens, and injecting a recording's VAE latents into the solve only pastes it in (tried and dropped). What it does accept is its own artifacts: an ABC score as the plan, semantic tokens as the AR past, latents as the start state of the acoustic solve. The three commands feed those entries from a recording or from a previous run.
 
 ```bash
 # 1. hum or sing a melody (mono, any format AVFoundation reads), 100 BPM by default
@@ -115,9 +116,32 @@ yue2 vary --song run/song --strength 0.4 --seed 2 --reference 4bit-fast --out ru
 yue2 regenerate --song run/song --from-seconds 20 --seed 3 --reference 4bit-fast --out run/song-alt-ending
 ```
 
-`melody` runs on the CPU (YIN pitch tracking, median smoothing, quantization on a sixteenth grid at the given tempo, Krumhansl key estimate, one diatonic chord per bar) and writes the score in the model's dialect: `L:1/16`, `V: Vocal` carrying the melody, `V: Ins` resting (`Z<n>|`), one `% verse` section. The `melody.json` next to it lists the MIDI notes, their start and length in sixteenths, the key, the voiced ratio (below 0.3 the command warns: the recording carried little pitch). Edit the `.abc` by hand before `generate` if a note is wrong; the model's planner is skipped entirely when a score is imposed.
+`melody` runs on the CPU (YIN pitch tracking, median smoothing, quantization on a sixteenth grid at the given tempo, Krumhansl key estimate, one diatonic chord per bar) and writes the score in the model's dialect: `L:1/16`, `V: Vocal` carrying the melody, `V: Ins` resting (`Z<n>|`), one `% verse` section. The `melody.json` next to it lists the MIDI notes, their start and length in sixteenths, the key, the voiced ratio (below 0.3 the command warns: the recording carried little pitch). A whistle sits two octaves above a voice and up to 2 kHz: pass `--max-hz 2500`; the melody is brought into the singing range by whole octaves automatically (`--octave-shift` to choose). Notes shorter than a sixteenth that sit within two semitones of a neighbour are read as slides into it, not as notes. Edit the `.abc` by hand before `generate` if a note is wrong; the model's planner is skipped entirely when a score is imposed.
 
 `vary --strength` is the SDEdit ratio: 0 returns the source latents unchanged, 1 is a fresh synthesis; 0.3-0.5 keeps the arrangement and changes the texture, 0.6-0.8 drifts further. The solve runs `round(strength × steps)` steps instead of 32, so a 0.4 variation costs 40 % of a full NAR. `regenerate --from-seconds` is rounded to a 40 ms frame; the kept frames are re-imposed after every ODE step (RePaint-style mask) and returned bit-exact, the seam is continuous by construction. By default the regenerated song keeps the source's length (the AR is cut there if it has not ended the song); `--free-length` lets the AR decide, and a song re-conditioned on its first half readily grows to two or three times its length. Both read the `generate --out` directory (`plan.json`, `semantic.npy`, `latent.npy`, `config.json`) and write a full one. Single-chunk songs only.
+
+## Covers from a recording: SheetSage2 → ABC → `cot melody`
+
+For a mixed recording (a real song, not a hummed line), the upstream route goes through the score: [SheetSage2](https://huggingface.co/m-a-p/SheetSage2) (gated, CC-BY-NC-4.0, PyTorch, built on MERT-v2-FullSong) transcribes the audio into an ABC score in the model's dialect, and the song is generated on that score with `cot: melody` (the melody is held, the accompaniment and the style come from the prompt). SheetSage2 is not ported; it runs in its own Python environment, on Apple silicon through MPS.
+
+```bash
+# once: Python 3.10/3.11 environment, CPU/MPS torch (the upstream README targets CUDA)
+uv venv --python 3.11 .venv && uv pip install --python .venv/bin/python "huggingface-hub==0.36.0"
+.venv/bin/huggingface-cli download m-a-p/SheetSage2 --local-dir SheetSage2
+uv pip install --python .venv/bin/python -r SheetSage2/requirements.txt
+# transformers 4.45 copies only part of a local repo's modules: copy them all into its module cache
+M=~/.cache/huggingface/modules/transformers_modules/SheetSage2; mkdir -p "$M" && cp SheetSage2/*.py "$M"/
+
+# transcribe (melody only: vocal and instrumental lines, no chord symbols) → cover-score/score.abc
+(cd SheetSage2 && ../.venv/bin/python infer.py ../excerpt.wav --output ../cover-score --device mps --melody-only)
+
+# a song on that score
+yue2 generate --style "…, A minor, 131 BPM" --lyrics "[Chorus]…" --cot melody --abc-file cover-score/score.abc --out run/cover
+# or that score as the opening of a longer song: the planner continues it (verses, repeats) in the same key and tempo
+yue2 generate --style "…" --lyrics "[Chorus]…[Verse]…[Chorus]…" --cot melody --abc-prefix-file cover-score/score.abc --out run/around
+```
+
+Measured on a 13 s excerpt of a mixed song (M3 Max): transcription in 43 s including the model load, 16.5 GB peak footprint; a clean eight-bar hook with key, tempo and section. Put the key and tempo SheetSage2 found (`K:`, `Q:`) in the style prompt. With `--abc-file` alone the AR may sing past the end of a short score; with `--abc-prefix-file` the planner tends to repeat the given section before writing new ones. Read the score before generating: it is the edit point (fix a note, change the tempo, add sections by hand).
 
 ## `encode`, `remix-experimental`
 

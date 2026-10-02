@@ -100,7 +100,7 @@ Clean traces (21 September): plan phase at 54-62 % of one core and 68-78 % GPU, 
 
 ```bash
 export YUE2_MODELS_DIR=$HOME/Library/Caches/models
-xcodebuild -scheme yue2 -configuration Release -derivedDataPath .xcodebuild build
+xcodebuild -scheme yue2 -configuration Release -destination 'platform=macOS' -derivedDataPath .xcodebuild build
 
 # the six references, two passes, 70 s song
 Scripts/bench-references.sh reference/yue/examples/song.json 1750 2

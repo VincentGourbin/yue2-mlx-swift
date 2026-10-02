@@ -43,6 +43,9 @@ public enum MelodyTranscriber {
         /// Pitch range searched, in Hz (a sung or hummed melody).
         public var minHz: Double = 70
         public var maxHz: Double = 1000
+        /// Octaves added to every note (negative = down). `nil` brings the melody's median into
+        /// the singing range (A3-E5) by whole octaves — a whistle sits two octaves above a voice.
+        public var octaveShift: Int? = nil
         public init() {}
     }
 
@@ -57,7 +60,22 @@ public enum MelodyTranscriber {
         let hopSeconds = Double(hop(for: sampleRate)) / sampleRate
         let voiced = f0.filter { $0 > 0 }.count
         let voicedRatio = f0.isEmpty ? 0 : Double(voiced) / Double(f0.count)
-        let segments = segment(f0: f0, hopSeconds: hopSeconds, minimumSeconds: options.minimumNoteMs / 1000)
+        // A note shorter than 0.6 sixteenth at the given tempo is a glide between two notes
+        // (whistles and voices slide), not a note of its own.
+        let minimumSeconds = max(options.minimumNoteMs / 1000, 0.6 * 60 / options.bpm / 4)
+        var segments = absorbGlides(
+            segment(f0: f0, hopSeconds: hopSeconds, minimumSeconds: minimumSeconds),
+            shorterThan: 60 / options.bpm / 4)
+        let shift: Int
+        if let explicit = options.octaveShift {
+            shift = explicit
+        } else if !segments.isEmpty {
+            let median = Double(segments.map(\.midi).sorted()[segments.count / 2])
+            shift = median > 76 ? -Int(((median - 66) / 12).rounded()) : (median < 57 ? Int(((66 - median) / 12).rounded()) : 0)
+        } else {
+            shift = 0
+        }
+        if shift != 0 { segments = segments.map { Segment(midi: $0.midi + 12 * shift, start: $0.start, end: $0.end) } }
         let notes = quantize(segments: segments, bpm: options.bpm)
         let key = estimateKey(notes: notes)
         let abc = render(notes: notes, key: key, bpm: options.bpm, section: options.section)
@@ -205,6 +223,34 @@ public enum MelodyTranscriber {
             }
         }
         return merged
+    }
+
+    /// A segment shorter than a sixteenth next to a segment within two semitones is the
+    /// start or the end of a slide into that note (whistles and voices glide): it joins it and
+    /// takes its pitch. Repeats until nothing short is left to absorb.
+    static func absorbGlides(_ input: [Segment], shorterThan limit: Double) -> [Segment] {
+        var segments = input
+        var changed = true
+        while changed {
+            changed = false
+            for i in segments.indices where segments[i].end - segments[i].start < limit {
+                let s = segments[i]
+                let prev = i > 0 ? segments[i - 1] : nil
+                let next = i + 1 < segments.count ? segments[i + 1] : nil
+                let prevDistance = prev.map { abs($0.midi - s.midi) } ?? Int.max
+                let nextDistance = next.map { abs($0.midi - s.midi) } ?? Int.max
+                guard min(prevDistance, nextDistance) <= 2 else { continue }
+                if prevDistance <= nextDistance, let prev {
+                    segments[i - 1] = Segment(midi: prev.midi, start: prev.start, end: s.end)
+                } else if let next {
+                    segments[i + 1] = Segment(midi: next.midi, start: s.start, end: next.end)
+                }
+                segments.remove(at: i)
+                changed = true
+                break
+            }
+        }
+        return segments
     }
 
     // MARK: - Quantization (sixteenth grid)

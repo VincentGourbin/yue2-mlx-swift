@@ -4,7 +4,7 @@ Swift MLX port of YuE2 (m-a-p/YuE2-3B + YuE2-Vae): lyrics + style → editable A
 **PLAN.md is the porting spec** — read §2 (architecture facts) and §9 (pitfall checklist) before touching model code. Upstream reference: https://github.com/multimodal-art-projection/YuE (`src/yue2/*.py`).
 ## Build & Run
 Build with `xcodebuild`, NOT `swift build` (SPM binaries cannot find MLX's `default.metallib`):
-  xcodebuild -scheme yue2 -configuration Release -derivedDataPath .xcodebuild build   # binary: .xcodebuild/Build/Products/Release/yue2
+  xcodebuild -scheme yue2 -configuration Release -destination 'platform=macOS' -derivedDataPath .xcodebuild build   # binary: .xcodebuild/Build/Products/Release/yue2
 `swift build` is for compile checks only.
 ## Tests
 Use `Scripts/run-tests.sh` (serial swift-testing: ABBA deadlock in mlx-swift between compiled functions and vjp; watchdog; relays every YUE2_* variable as TEST_RUNNER_YUE2_*). Two tiers: weight-free (always green) and checkpoint-backed (gated on YUE2_MODELS_DIR, in Real*Tests.swift and GenerationSmokeTests.swift). `xcodebuild test` relaunches crashed workers and still prints ✔ — trust `xcrun xctest`.
@@ -23,3 +23,6 @@ docs/knowledge/ is an OKF bundle (index.md, log.md, pitfalls/, benchmarks/, deci
 
 ## iOS backend (Jalon 6)
 `plan/13-ios-backend.md` (rev. 2) is the spec: MLX int4 for the AR path and orchestration, **Core AI** (iOS 27, `coreai-torch`, `xcrun coreai-build`) for the VAE and the whole NAR stack, GPU vs Neural Engine chosen by measurement, always with an MLX fallback. Never let a Core AI VAE asset specialize on CPU (open conv-transpose defect). Experiments E1–E5 run on the Mac first; device measurements gate everything (G-9). The iOS app lives in `Apps/YuE2Mobile` (Xcode project created by hand, §13.9; `Signing.xcconfig` gitignored).
+
+## Session memory and handovers
+`docs/knowledge/agent-memory.md` carries what the agent's persistent memory holds (Vincent's conventions, project state, durable pitfalls); read it at the start of a session. Topic handovers live next to it (`docs/knowledge/handover-*.md`): **audio input** — the real-excerpt inpaint/anchor path was refuted by ear on 2026-10-02; the way forward is symbolic (SheetSage2 transcription → ABC → `cot melody`), see `handover-audio-input-2026-10-02.md` before touching `Pipeline/YuE2Pipeline+Edit.swift` or `Audio/MelodyTranscriber.swift`.

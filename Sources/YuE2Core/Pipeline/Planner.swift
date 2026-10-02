@@ -31,16 +31,21 @@ public struct Planner {
             return SymbolicPlan(request: request, abc: abc, abcIDs: ids, prefix: prefix)
         }
 
-        let sampling = resolveSampling(abcSampling, default: config.abc)
-        let prefix = try Prefixes.tokenPrefixes(request: request, tokenizer: tokenizer)
+        var sampling = resolveSampling(abcSampling, default: config.abc)
+        // A forced beginning of score: its tokens open the ABC phase, the model continues.
+        let forced = request.abcPrefix.map { tokenizer.encode($0) } ?? []
+        sampling.maxTokens = max(1, sampling.maxTokens - forced.count)
+        sampling.minTokens = max(0, sampling.minTokens - forced.count)
+        let prefix = try Prefixes.tokenPrefixes(request: request, tokenizer: tokenizer) + forced
         let head = RestrictedHead(lmHead: model.lmHead, bounds: .abc)
         let result = try TokenGenerator.generate(
             model: model, head: head, prefix: prefix, sampling: sampling, seed: UInt64(request.seed),
             bounds: .abc, legacyOff: false, onToken: onToken, cancel: cancel)
-        let abcText = tokenizer.decode(result.tokens)
-        let finalPrefix = try Prefixes.tokenPrefixes(request: request, tokenizer: tokenizer, abcIDs: result.tokens)
+        let abcIDs = forced + result.tokens
+        let abcText = tokenizer.decode(abcIDs)
+        let finalPrefix = try Prefixes.tokenPrefixes(request: request, tokenizer: tokenizer, abcIDs: abcIDs)
         return SymbolicPlan(
-            request: request, abc: abcText, abcIDs: result.tokens, prefix: finalPrefix,
+            request: request, abc: abcText, abcIDs: abcIDs, prefix: finalPrefix,
             timing: result.timing, truncated: result.truncated)
     }
 }

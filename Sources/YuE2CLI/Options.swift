@@ -58,6 +58,9 @@ struct RequestOptions: ParsableArguments {
     @Option(name: .long, help: "Path to an external ABC score (overrides --request's abc).")
     var abcFile: String?
 
+    @Option(name: .long, help: "Path to a beginning of ABC score the planner continues from — header with key and tempo, first sections (overrides --request's abc_prefix).")
+    var abcPrefixFile: String?
+
     @Option(name: .long, help: "Classifier-free guidance scale, in [0, 20] (overrides --request's cfg_scale).")
     var cfgScale: Double?
 
@@ -70,6 +73,7 @@ struct RequestOptions: ParsableArguments {
         var cotRaw: String?
         var seed = self.seed
         var abc: String?
+        var abcPrefix: String?
         var cfgScale = self.cfgScale
         var id = self.id
 
@@ -81,12 +85,16 @@ struct RequestOptions: ParsableArguments {
             cotRaw = base.cot.rawValue
             seed = seed ?? base.seed
             abc = base.abc
+            abcPrefix = base.abcPrefix
             cfgScale = cfgScale ?? base.cfgScale
             id = id ?? base.id
         }
         if let cot { cotRaw = cot }
         if let abcFile {
             abc = try String(contentsOf: URL(fileURLWithPath: abcFile), encoding: .utf8)
+        }
+        if let abcPrefixFile {
+            abcPrefix = try String(contentsOf: URL(fileURLWithPath: abcPrefixFile), encoding: .utf8)
         }
         guard let style, let lyrics else {
             throw YuE2Error.invalidRequest("pass --request or both --style and --lyrics")
@@ -96,7 +104,7 @@ struct RequestOptions: ParsableArguments {
         }
         return try SongRequest(
             style: style, lyrics: lyrics, cot: cotMode, seed: seed ?? 831_001,
-            abc: abc, cfgScale: cfgScale, id: id ?? "song")
+            abc: abc, abcPrefix: abcPrefix, cfgScale: cfgScale, id: id ?? "song")
     }
 }
 

@@ -33,7 +33,7 @@ Requirements: macOS 15+ (macOS 27 for Core AI), Xcode 26+ (Swift 6), Apple Silic
 
 ```bash
 # build (xcodebuild, never `swift build` for a binary: MLX's metallib would not be found)
-xcodebuild -scheme yue2 -configuration Release -derivedDataPath .xcodebuild build
+xcodebuild -scheme yue2 -configuration Release -destination 'platform=macOS' -derivedDataPath .xcodebuild build
 BIN=.xcodebuild/Build/Products/Release/yue2
 
 # weights (Hugging Face, CC-BY-NC-4.0) and tokenizer, plus the 4-bit reference pack (2.5 GB)
@@ -88,10 +88,10 @@ On the iPhone 15 Pro Max (`4bit-lean`): a 30 s song in 273 s, 60 s in ≈ 12.7 m
 1. **Reproduces YuE2 inference faithfully** in MLX Swift, module by module, with numerical proof at every step (PyTorch fixtures, tolerances fixed before porting: VAE fp32 max 2e-3, LM bf16 rel < 2 %, exact greedy tokens).
 2. **Fits in a phone**: 4 / 8-bit quantization per branch, stage-scoped weight residency (the budget is the largest stage, not the sum), per-step ODE checkpoints and a GPU gate to survive iOS cutting the GPU in the background, memory limits sized from available memory.
 3. **Measures before claiming**: every number comes from `swift-mlx-profiler`, with cool-down, A/B/B/A and a control; the log of measurements, decisions and pitfalls lives in `docs/knowledge/`.
-4. **Takes audio in through the model's own entries**: a hummed melody becomes the ABC score the song follows (`yue2 melody`), a saved song gets variations (`yue2 vary`, SDEdit on its latents) or a new second half (`yue2 regenerate`, kept part re-imposed at every ODE step). The model has no audio understanding at inference, so these are the honest paths; details in [docs/CLI.md](docs/CLI.md#audio-in-melody-vary-regenerate).
+4. **Takes audio in through the model's own entries**: a hummed melody becomes the ABC score the song follows (`yue2 melody`), a saved song gets variations (`yue2 vary`, SDEdit on its latents) or a new second half (`yue2 regenerate`, kept part re-imposed at every ODE step); a real song is transcribed by SheetSage2 (Python, MPS) into a score the cover is generated on (`cot: melody`, `--abc-file` or `--abc-prefix-file`). The model has no audio understanding at inference, so these are the honest paths; details in [docs/CLI.md](docs/CLI.md#audio-in-melody-vary-regenerate) and [covers](docs/CLI.md#covers-from-a-recording-sheetsage2--abc--cot-melody).
 5. **Serves as a test bed for plan execution by coding agents**: task cards in `tasks/`, the plan in `plan/`.
 
-Out of scope: MERT2 and SheetSage2 (covers from audio), `cot: off` (supported, not measured), bit-exact reproduction of PyTorch's random generator (parity on injected noise).
+Out of scope: a Swift port of MERT2 and SheetSage2 (SheetSage2 runs alongside in Python), `cot: off` (supported, not measured), bit-exact reproduction of PyTorch's random generator (parity on injected noise).
 
 ## Parity and tests
 
