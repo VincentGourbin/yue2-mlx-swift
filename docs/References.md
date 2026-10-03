@@ -62,3 +62,22 @@ YUE2_MEMORY_PROFILE=mobile yue2 generate --request song.json --quant int4-mixed 
 # 16bit-lean
 yue2 generate --request song.json --release-weights-between-stages --vae-precision fp16 --vae-core-frames 256 --out run/
 ```
+
+## Transcription profiles (`yue2 transcribe --profile`, `SheetSage2Profile`)
+
+The SheetSage2 port has its own `<bits>bit-fast|lean` profiles (`Sources/SheetSage2Core/SheetSage2Profile.swift`). Bits are those of the Conformer encoder's linear layers (the decoder stays fp16: ≈ 50 MB of linear weights, and the greedy loop compounds any error; the ConvNeXt front stays fp32). *Lean* computes the STFT and the ConvNeXt by chunks of 2 048 frames (the global GRN normalization in two passes), encodes every window first and releases the encoder before decoding, and caps the MLX cache at 128 MB.
+
+M3 Max, release build, idle GPU, 30 s cool-down; fidelity against the fp32 transcription, which is byte-identical to upstream (excerpts: same tokens and ABC; 500 s: note F1, pitch + onset ± 50 ms — for scale, changing only the input resampler gives F1 0.25 in fp32).
+
+| Id | 30 s excerpt | 500 s song | Peak (30 s / 500 s) | Resident after load | Fidelity |
+|---|---|---|---|---|---|
+| `16bit-fast` | 3.0 s | 20.9 s | 3.3 / 3.6 GB | 1.6 GB | ABC identical on both excerpts; 500 s F1 0.33 |
+| `16bit-lean` | 3.2 s | 22.1 s | **2.2 / 2.4 GB** | 1.6 GB | ABC identical on both excerpts; 500 s F1 0.32 |
+| `8bit-fast` | 3.0 s | 21.6 s | 2.8 / 3.1 GB | 1.9 GB¹ | pop excerpt identical from the file, orchestral score changed (tempo 151 vs 172, motif rewritten); F1 0.17 |
+| `8bit-lean` | 3.1 s | 21.2 s | 1.9 / 1.9 GB¹ | 1.9 GB¹ | as `8bit-fast`; F1 0.18 |
+| `4bit-fast` | 2.9 s | 20.8 s | 2.5 / 2.8 GB | 1.6 GB¹ | pop: one note added; orchestral changed; F1 0.26 |
+| `4bit-lean` | 3.1 s | 21.3 s | 1.6 / 1.6 GB¹ | 1.6 GB¹ | as `4bit-fast`; F1 0.20 |
+
+¹ MLX holds 0.92 GB (8-bit) and 0.63 GB (4-bit) of weights; the footprint keeps the transient of quantizing a loaded fp16 model. A prequantized pack would load at those sizes directly.
+
+Recommended: `16bit-fast` on a Mac, `16bit-lean` on an iPhone (−1.1 GB for +5 % time, same scores). The quantized profiles are measured, not adopted: they change scores on rubato orchestral material (both readings are plausible; the 8-bit one is closer to the written motif) and save only 0.3-0.6 GB more.

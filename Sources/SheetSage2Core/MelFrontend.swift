@@ -28,8 +28,10 @@ final class MelFrontend: Module {
         super.init()
     }
 
-    /// `waveform` `[samples]` float32 → `[frames − 1, nMels]` normalized log-mel.
-    func callAsFunction(_ waveform: MLXArray) -> MLXArray {
+    /// `waveform` `[samples]` float32 → `[frames − 1, nMels]` normalized log-mel; with
+    /// `chunkFrames`, the STFT runs by chunks of frames (each evaluated) instead of materializing
+    /// the whole window's spectrum (≈ 0.5 GB for 300 s).
+    func callAsFunction(_ waveform: MLXArray, chunkFrames: Int? = nil) -> MLXArray {
         let x = waveform.asType(.float32)
         let half = nFFT / 2
         // Reflect padding (torch.stft center=True): x[half], …, x[1] | x | x[n−2], …, x[n−1−half].
@@ -38,11 +40,23 @@ final class MelFrontend: Module {
         let right = x[MLXArray(Array(stride(from: n - 2, to: n - 2 - half, by: -1)).map(Int32.init))]
         let padded = concatenated([left, x, right], axis: 0)
         let frames = 1 + (padded.dim(0) - nFFT) / hopLength
-        let windowed = asStrided(padded, [frames, nFFT], strides: [hopLength, 1]) * spectrogram.window
-        let spectrum = MLX.abs(MLXFFT.rfft(windowed, axis: -1))
-        let power = spectrum * spectrum
-        let mel = matmul(power, melScale.fb)
-        let db = 10 * MLX.log10(MLX.maximum(mel, MLXArray(Float(1e-10))))
+        func logMel(_ start: Int, _ count: Int) -> MLXArray {
+            let windowed = asStrided(padded, [count, nFFT], strides: [hopLength, 1], offset: start * hopLength) * spectrogram.window
+            let spectrum = MLX.abs(MLXFFT.rfft(windowed, axis: -1))
+            let mel = matmul(spectrum * spectrum, melScale.fb)
+            return 10 * MLX.log10(MLX.maximum(mel, MLXArray(Float(1e-10))))
+        }
+        let db: MLXArray
+        if let chunkFrames, chunkFrames < frames {
+            eval(padded)
+            db = concatenated(stride(from: 0, to: frames, by: chunkFrames).map { start in
+                let part = logMel(start, min(chunkFrames, frames - start))
+                eval(part)
+                return part
+            }, axis: 0)
+        } else {
+            db = logMel(0, frames)
+        }
         let trimmed = db[0..<(frames - 1)]
         return (trimmed - melMean) / MLX.maximum(melStd, MLXArray(Float(1e-5)))
     }

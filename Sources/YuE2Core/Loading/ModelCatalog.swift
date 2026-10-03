@@ -26,10 +26,13 @@ public enum YuE2Model: String, CaseIterable, Sendable {
     case lm = "YuE2-3B"
     case vae = "YuE2-Vae"
     case vaeLegacy = "YuE2-Vae-legacy"
-    /// SheetSage2 transcription (audio → ABC, plan/14-sheetsage2.md): adapters + decoder. Gated.
+    /// SheetSage2 transcription (audio → ABC, plan/14-sheetsage2.md): adapters + decoder.
     case sheetsage2 = "SheetSage2"
-    /// MERT-v2-FullSong, SheetSage2's encoder parent; the adapters are merged into it at load. Gated.
+    /// MERT-v2-FullSong, SheetSage2's encoder parent; the adapters are merged into it at load.
     case mert2FullSong = "MERT-v2-FullSong"
+    /// The same two merged and cast to fp16 (1.4 GB, CC-BY-NC-4.0 derivative published by the
+    /// author, `Scripts/publish-sheetsage2-pack.sh`): no merge at load, half the download.
+    case sheetsage2FP16 = "SheetSage2-fp16"
 
     /// HuggingFace repository id (`m-a-p/…`).
     public var repoID: String {
@@ -39,6 +42,7 @@ public enum YuE2Model: String, CaseIterable, Sendable {
         case .vaeLegacy: return "m-a-p/YuE2-Vae-legacy"
         case .sheetsage2: return "m-a-p/SheetSage2"
         case .mert2FullSong: return "m-a-p/MERT-v2-FullSong"
+        case .sheetsage2FP16: return "VincentGOURBIN/sheetsage2-mlx-fp16"
         }
     }
 
@@ -65,6 +69,8 @@ public enum YuE2Model: String, CaseIterable, Sendable {
             return ["config.json", "model.safetensors", "weights_manifest.json"]
         case .sheetsage2, .mert2FullSong:
             return ["config.json", "model.safetensors"]
+        case .sheetsage2FP16:
+            return ["config.json", "model.safetensors.sha256", "model.safetensors"]
         }
     }
 

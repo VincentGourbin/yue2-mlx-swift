@@ -4,7 +4,7 @@ Décidé le 2026-10-03 (Vincent : « allez lançons le portage »). Chiffrage et
 
 ## Référence amont
 
-- `m-a-p/SheetSage2` révision `398b22834dac7dd05e09b9c4e40a39fc479ec502` (code + adaptateurs + décodeur, CC-BY-NC-4.0, gated).
+- `m-a-p/SheetSage2` révision `398b22834dac7dd05e09b9c4e40a39fc479ec502` (code + adaptateurs + décodeur, CC-BY-NC-4.0, public — le « sign in with access » du README amont ne correspond pas à l'état du dépôt, vérifié le 2026-10-03).
 - Parent `m-a-p/MERT-v2-FullSong` révision `d8ba1c745e733b3908ce6ad16ebeb17ac7600a42` (épinglée par `config.json` amont, vérifiée par SHA-256).
 - Environnement : `Scripts/setup-sheetsage2-env.sh` → `.venv-sheetsage2/` (Python 3.11, torch 2.8, transformers 4.45.2) et `reference/sheetsage2/` (gitignorés).
 

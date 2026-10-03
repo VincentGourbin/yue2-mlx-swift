@@ -47,8 +47,31 @@ final class ConvNextLayer: Module {
         super.init()
     }
 
-    func callAsFunction(_ x: MLXArray) -> MLXArray {
-        x + project(grn(gelu(expand(norm(depthwise(x))))))
+    func callAsFunction(_ x: MLXArray, chunkFrames: Int? = nil) -> MLXArray {
+        guard let chunkFrames, chunkFrames < x.dim(1) else {
+            return x + project(grn(gelu(expand(norm(depthwise(x))))))
+        }
+        // Two passes so no whole-window ×4 activation exists: the GRN's L2 norm over time is
+        // accumulated chunk by chunk, then each chunk is recomputed and normalized.
+        let mixed = depthwise(x)
+        eval(mixed)
+        let t = x.dim(1)
+        let ranges = stride(from: 0, to: t, by: chunkFrames).map { $0 ..< min(t, $0 + chunkFrames) }
+        func expanded(_ r: Range<Int>) -> MLXArray { gelu(expand(norm(mixed[0..., r, 0...]))) }
+        var sumOfSquares = MLXArray.zeros([1, 1, grn.weight.dim(-1)], dtype: .float32)
+        for r in ranges {
+            let e = expanded(r).asType(.float32)
+            sumOfSquares = sumOfSquares + MLX.sum(e * e, axis: 1, keepDims: true)
+            eval(sumOfSquares)
+        }
+        let magnitude = MLX.sqrt(sumOfSquares)
+        let normalized = (magnitude / (MLX.mean(magnitude, axis: -1, keepDims: true) + 1e-6)).asType(x.dtype)
+        return concatenated(ranges.map { r in
+            let e = expanded(r)
+            let y = x[0..., r, 0...] + project(grn.weight * (e * normalized) + grn.bias + e)
+            eval(y)
+            return y
+        }, axis: 1)
     }
 }
 
@@ -68,13 +91,14 @@ final class ConvNextBlock: Module {
         super.init()
     }
 
-    func callAsFunction(_ x: MLXArray) -> MLXArray {
+    func callAsFunction(_ x: MLXArray, chunkFrames: Int? = nil) -> MLXArray {
         var h = x
         if let resampleNorm, let resampleConv {
             h = resampleConv(resampleNorm(h))
         }
         for layer in layers {
-            h = layer(h)
+            h = layer(h, chunkFrames: chunkFrames)
+            if chunkFrames != nil { eval(h) }
         }
         return h
     }
@@ -129,25 +153,24 @@ final class ConformerFeedForward: Module {
 }
 
 /// `LayerNorm → pointwise ×2 → GLU → depthwise k31 → LayerNorm → GELU → pointwise`, no biases.
+/// The kernel-1 pointwise convolutions are `Linear` layers (same product), so they quantize.
 final class ConformerConvolution: Module {
     @ModuleInfo(key: "layer_norm") var layerNorm: LayerNorm
-    @ModuleInfo(key: "pointwise_in") var pointwiseIn: Conv1d
+    @ModuleInfo(key: "pointwise_in") var pointwiseIn: Linear
     @ModuleInfo(key: "depthwise") var depthwise: Conv1d
     @ModuleInfo(key: "depthwise_norm") var depthwiseNorm: LayerNorm
-    @ModuleInfo(key: "pointwise_out") var pointwiseOut: Conv1d
+    @ModuleInfo(key: "pointwise_out") var pointwiseOut: Linear
 
     init(config: MERT2Config) {
         let width = config.hiddenSize
         let kernel = config.convDepthwiseKernelSize
         _layerNorm.wrappedValue = LayerNorm(dimensions: width, eps: config.layerNormEps)
-        _pointwiseIn.wrappedValue = Conv1d(
-            inputChannels: width, outputChannels: 2 * width, kernelSize: 1, bias: false)
+        _pointwiseIn.wrappedValue = Linear(width, 2 * width, bias: false)
         _depthwise.wrappedValue = Conv1d(
             inputChannels: width, outputChannels: width, kernelSize: kernel, padding: (kernel - 1) / 2,
             groups: width, bias: false)
         _depthwiseNorm.wrappedValue = LayerNorm(dimensions: width, eps: config.layerNormEps)
-        _pointwiseOut.wrappedValue = Conv1d(
-            inputChannels: width, outputChannels: width, kernelSize: 1, bias: false)
+        _pointwiseOut.wrappedValue = Linear(width, width, bias: false)
         super.init()
     }
 

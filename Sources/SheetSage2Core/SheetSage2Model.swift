@@ -18,6 +18,10 @@ public struct SheetSage2EncoderTaps {
 /// output projection is the token embedding.
 public final class SheetSage2Model: Module {
     public let config: SheetSage2Config
+    /// Chunked STFT and ConvNeXt (lean profiles); `nil` computes each stage on the whole window.
+    public var chunkFrames: Int?
+    /// `false` once `releaseEncoder()` ran: decoding still works, encoding throws.
+    public private(set) var encoderResident = true
 
     @ModuleInfo(key: "encoder") var encoder: MERT2Encoder
     @ParameterInfo(key: "layer_weight") var layerWeight: MLXArray
@@ -50,8 +54,11 @@ public final class SheetSage2Model: Module {
 
     /// Encoder memory `[1, frames, hidden]` for one window, plus every intermediate tensor.
     public func encodeWithTaps(_ waveform: MLXArray, tapLayers: Set<Int> = []) throws -> SheetSage2EncoderTaps {
+        guard encoderResident else {
+            throw SheetSage2Error.weightMismatch("the encoder was released (releaseEncoder); load the model again to encode")
+        }
         let padded = try padToWindow(waveform)
-        let mel = encoder.featureExtractor(padded)
+        let mel = encoder.featureExtractor(padded, chunkFrames: chunkFrames)
         // Evaluate stage by stage: one lazy graph over the whole 300 s window keeps every stage's
         // transients alive at once (8 GB peak measured, 2.95 GB evaluated per stage, fp16).
         eval(mel)
@@ -64,7 +71,7 @@ public final class SheetSage2Model: Module {
         var hidden = mel.asType(convDType)[.newAxis]
         var subsampling = [MLXArray]()
         for block in encoder.subsampling {
-            hidden = block(hidden)
+            hidden = block(hidden, chunkFrames: chunkFrames)
             eval(hidden)
             subsampling.append(hidden)
         }
@@ -86,6 +93,15 @@ public final class SheetSage2Model: Module {
     /// Encoder memory `[1, frames, hidden]` for one window.
     public func encode(_ waveform: MLXArray) throws -> MLXArray {
         try encodeWithTaps(waveform).memory
+    }
+
+    /// Drops the encoder's weights (≈ 1.2 GB in float16) once every window is encoded: the
+    /// decoder only needs its own weights and the encoder memories.
+    public func releaseEncoder() {
+        let empty = encoder.parameters().flattened().map { ($0.0, MLXArray.zeros([0], dtype: $0.1.dtype)) }
+        encoder.update(parameters: ModuleParameters.unflattened(empty))
+        encoderResident = false
+        Memory.clearCache()
     }
 
     public func makeCache() -> BartDecoderCache {

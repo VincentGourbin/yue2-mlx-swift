@@ -2,6 +2,13 @@
 
 Published versions are squashed commits on `main` (the working history stays local); each version has a tag and a GitHub release.
 
+## 1.6.0 — 2026-10-03
+
+- **Transcription profiles** `16bit-fast|lean`, `8bit-fast|lean`, `4bit-fast|lean` (`SheetSage2Profile`, `yue2 transcribe --profile`), as for YuE2. *Lean*: STFT and ConvNeXt by chunks (the global GRN normalization in two passes), every window encoded then the encoder released before decoding, 128 MB MLX cache. `16bit-lean`: 2.2-2.4 GB peak instead of 3.3-3.6 GB for +5 % time, same scores. The quantized profiles (encoder only) are measured, not adopted: they change orchestral scores. Table in [docs/References.md](docs/References.md#transcription-profiles-yue2-transcribe---profile-sheetsage2profile).
+- **Merged fp16 SheetSage2 pack** on Hugging Face, [`VincentGOURBIN/sheetsage2-mlx-fp16`](https://huggingface.co/VincentGOURBIN/sheetsage2-mlx-fp16) (CC-BY-NC-4.0 derivative, 1.4 GB, SHA-256 verified): `yue2 download --model sheetsage2-fp16`, default `transcribe` model when present; loads in 0.2 s / 1.4 GB, same tokens as the upstream release under the 16-bit profiles. `ModelDownloader` verifies a model's `model.safetensors.sha256` sidecar when it has one.
+- Correction: `m-a-p/SheetSage2` and `m-a-p/MERT-v2-FullSong` are public, not gated (1.5.0 said otherwise); no token is needed.
+- The Conformer's kernel-1 pointwise convolutions are `Linear` layers (same product, quantizable).
+
 ## 1.5.0 — 2026-10-03
 
 - **SheetSage2 ported to MLX Swift**: new library product `SheetSage2Core` and `yue2 transcribe --audio song.m4a --out run/score` (recording → ABC score, melody only by default, `--chords` for the full lead sheet). No Python any more for covers: `yue2 download --model sheetsage2` fetches the gated upstream release and its MERT-v2-FullSong parent at pinned revisions, the LoRA adapters are merged at load.

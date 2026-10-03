@@ -38,6 +38,17 @@ public actor ModelDownloader {
                 progress(DownloadProgress(file: file, fileIndex: index, fileCount: files.count, writtenBytes: written, totalBytes: total))
             }
         }
+        // Models published with a SHA-256 sidecar (the author's packs) are verified once complete.
+        let sidecar = dir.appendingPathComponent("model.safetensors.sha256")
+        if files.contains("model.safetensors.sha256"), let expected = try? String(contentsOf: sidecar, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        {
+            let weights = dir.appendingPathComponent("model.safetensors")
+            guard try Self.sha256Hex(of: weights).caseInsensitiveCompare(expected) == .orderedSame else {
+                try? FileManager.default.removeItem(at: weights)
+                throw YuE2Error.weightMismatch("\(model.rawValue)/model.safetensors: SHA-256 differs from the published sidecar (removed)")
+            }
+        }
     }
 
     /// Downloads `pack` (its `.sha256` sidecar first, then the weights) into

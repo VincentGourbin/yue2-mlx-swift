@@ -135,3 +135,24 @@ struct SheetSage2AdapterMergeTests {
         #expect(result.tokens.first == expected)
     }
 }
+
+/// The published merged fp16 pack loads into exactly the model the 16-bit profiles build from the
+/// upstream release: same tokens on both parity excerpts.
+@Suite("SheetSage2FP16Pack", .enabled(if: upstreamReady() && modelsDir().map {
+    FileManager.default.fileExists(atPath: $0.appendingPathComponent("SheetSage2-fp16/model.safetensors").path)
+} == true))
+struct SheetSage2FP16PackTests {
+    @Test func packMatchesTheUpstreamReleaseUnderTheSixteenBitProfile() throws {
+        let dir = try #require(modelsDir())
+        let profile = SheetSage2Profile.named("16bit-fast")!
+        let pack = try SheetSage2Model.load(directory: dir.appendingPathComponent("SheetSage2-fp16"), profile: profile)
+        let upstream = try SheetSage2Model.load(directory: dir.appendingPathComponent("SheetSage2"), profile: profile)
+        for name in ["sheetsage2_beethoven", "sheetsage2_magic"] {
+            let waveform = try #require(try loadFixture(name: name)["input_waveform"])
+            let a = try SheetSage2Transcriber(model: pack, profile: profile).transcribe(waveform)
+            let b = try SheetSage2Transcriber(model: upstream, profile: profile).transcribe(waveform)
+            #expect(a.tokens == b.tokens, "\(name)")
+            #expect(a.abc == b.abc, "\(name)")
+        }
+    }
+}

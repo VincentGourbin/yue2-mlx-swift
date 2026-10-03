@@ -20,10 +20,10 @@ public enum SheetSage2Weights {
         (".pointwise_block.1.", ".expand.", false),
         (".pointwise_block.3.", ".grn.", false),
         (".pointwise_block.4.", ".project.", false),
-        (".conv_block.1.", ".pointwise_in.", true),
+        (".conv_block.1.", ".pointwise_in.", false),
         (".conv_block.3.", ".depthwise.", true),
         (".conv_block.4.1.", ".depthwise_norm.", false),
-        (".conv_block.6.", ".pointwise_out.", true),
+        (".conv_block.6.", ".pointwise_out.", false),
     ]
 
     /// Renames and converts every tensor; `nil` keys are dropped.
@@ -37,7 +37,11 @@ public enum SheetSage2Weights {
                 mapped = mapped.replacingOccurrences(of: from, with: to)
                 isConv = isConv || conv
             }
-            result[mapped] = isConv && mapped.hasSuffix(".weight") ? value.transposed(0, 2, 1) : value
+            if mapped.contains(".pointwise_in.") || mapped.contains(".pointwise_out.") {
+                result[mapped] = value.squeezed(axis: -1)  // kernel-1 Conv1d [out, in, 1] → Linear [out, in]
+            } else {
+                result[mapped] = isConv && mapped.hasSuffix(".weight") ? value.transposed(0, 2, 1) : value
+            }
         }
         // `save_pretrained` keeps a single copy of tied tensors; which name survives depends on
         // the tie order, so take whichever copy the file has.

@@ -9,10 +9,14 @@
 | `YuE2-Vae-legacy/` | older VAE, optional | 0.5 GB | CC-BY-NC-4.0 |
 | `YuE2-3B/mlx-prequantized/<preset>[-head]/model.safetensors` | **produced locally** on the first use of a preset | 2.4-5.5 GB | derivative, same licence |
 | `YuE2-Vae/coreai/*.aimodel`, `YuE2-3B/coreai/*.aimodel` | `Scripts/coreai/export_*.py` | 0.13 / 1.3 GB | derivative |
-| `SheetSage2/` | `m-a-p/SheetSage2` @ `398b228` (LoRA adapters + BART decoder, fp32), for `yue2 transcribe` | 0.23 GB | CC-BY-NC-4.0, gated |
-| `MERT-v2-FullSong/` | `m-a-p/MERT-v2-FullSong` @ `d8ba1c7` (the parent revision SheetSage2 pins, not `main`) | 2.5 GB | CC-BY-NC-4.0, gated |
+| `SheetSage2/` | `m-a-p/SheetSage2` @ `398b228` (LoRA adapters + BART decoder, fp32), for `yue2 transcribe` | 0.23 GB | CC-BY-NC-4.0 |
+| `MERT-v2-FullSong/` | `m-a-p/MERT-v2-FullSong` @ `d8ba1c7` (the parent revision SheetSage2 pins, not `main`) | 2.5 GB | CC-BY-NC-4.0 |
 
-`yue2 download` fetches the first two; `yue2 download --model sheetsage2` the last two (accept both repositories' terms on Hugging Face and export `HF_TOKEN`). The adapters are merged into MERT at load; no merged copy is published. The code in this repository is MIT; the weights are never distributed here.
+`yue2 download` fetches the first two; `yue2 download --model sheetsage2` the last two (public repositories, no token needed), merged at load. The quicker route for transcription is the merged fp16 pack below.
+
+| `SheetSage2-fp16/` | [`VincentGOURBIN/sheetsage2-mlx-fp16`](https://huggingface.co/VincentGOURBIN/sheetsage2-mlx-fp16): the two above merged and cast to fp16 (ConvNeXt front and mel buffers kept fp32), SHA-256 verified — `yue2 download --model sheetsage2-fp16` | 1.4 GB | CC-BY-NC-4.0 derivative (`Scripts/publish-sheetsage2-pack.sh`) |
+
+With the pack, `yue2 transcribe` loads in 0.2 s and 1.4 GB, and gives the same tokens and scores as the upstream release under the `16bit-*` profiles (`SheetSage2FP16PackTests`); it is the default `--model` when present. The adapters are merged into MERT at load; no merged copy is published. The code in this repository is MIT; the weights are never distributed here.
 
 ## The prequantized packs
 

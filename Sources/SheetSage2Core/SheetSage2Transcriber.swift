@@ -31,6 +31,9 @@ public struct SheetSage2Transcriber {
     /// MLX buffer-cache limit while transcribing (restored afterwards). Without it the cache keeps
     /// every freed encoder transient: +3 GB of footprint on a 300 s window. `nil` leaves it as is.
     public var cacheLimitBytes: Int? = 512 * 1024 * 1024
+    /// Release the encoder's weights once every window is encoded (lean profiles). The model
+    /// must then be loaded again before another transcription.
+    public var releaseEncoderAfterEncoding = false
 
     public init(model: SheetSage2Model) {
         self.model = model
@@ -66,14 +69,21 @@ public struct SheetSage2Transcriber {
         let duration = Double(samples) / rate
         let windowLength = model.config.inputAudioLength
         let plan = Self.windowPlan(duration: duration, window: windowLength, overlap: overlapSeconds, lookahead: lookaheadSeconds)
+        // Every window is encoded before any decoding (windows only depend on the audio), so the
+        // encoder can be released before the decoding loop.
+        var memories = [MLXArray]()
+        for window in plan {
+            let offset = Int((window.start * rate).rounded())
+            let count = Int((windowLength * rate).rounded())
+            memories.append(try model.encode(waveform[offset ..< min(samples, offset + count)]))
+            Memory.clearCache()
+        }
+        if releaseEncoderAfterEncoding { model.releaseEncoder() }
         var generator = SheetSage2Generator(model: model)
         var stitched = [SheetSage2Event]()
         var allTokens = [[Int]]()
         var warnings = [String]()
         for (index, window) in plan.enumerated() {
-            let offset = Int((window.start * rate).rounded())
-            let count = Int((windowLength * rate).rounded())
-            let segment = waveform[offset ..< min(samples, offset + count)]
             var prefix: [Int]?
             var base = 0
             if index > 0, let built = OverlapPrefix.build(
@@ -84,8 +94,7 @@ public struct SheetSage2Transcriber {
                 }
                 (prefix, base) = (built.tokens, built.baseSubbeat)
             }
-            let memory = try model.encode(segment)
-            Memory.clearCache()
+            let memory = memories[index]
             let stop = window.generationStop ?? min(duration - window.start, windowLength)
             let tokens = try generator.generate(
                 memory: memory, prompts: prompts, prefixTokens: prefix, stopTimeSeconds: stop,

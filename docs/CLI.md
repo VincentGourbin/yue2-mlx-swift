@@ -75,7 +75,8 @@ yue2 decode     --latents run/song/latent.npy --out run/song/audio.wav --precisi
 yue2 download --models-dir $YUE2_MODELS_DIR            # lm,vae ; --model lm,vae,vae-legacy
 yue2 download --model int4-mixed-head                  # a published prequantized pack (2.5 GB)
 yue2 download --model packs                            # all three packs (10.4 GB)
-yue2 download --model sheetsage2                       # SheetSage2 + MERT-v2-FullSong (gated: HF_TOKEN), for transcribe
+yue2 download --model sheetsage2-fp16                  # merged fp16 SheetSage2 pack (1.4 GB), for transcribe
+yue2 download --model sheetsage2                       # or the upstream release + MERT-v2-FullSong (2.7 GB), merged at load
 yue2 info
 ```
 
@@ -127,8 +128,8 @@ yue2 regenerate --song run/song --from-seconds 20 --seed 3 --reference 4bit-fast
 For a mixed recording (a real song, not a hummed line), the upstream route goes through the score: [SheetSage2](https://huggingface.co/m-a-p/SheetSage2) transcribes the audio into an ABC score in the model's dialect, and the song is generated on that score with `cot: melody` (the melody is held, the accompaniment and the style come from the prompt). SheetSage2 is ported to MLX Swift (`SheetSage2Core`, plan/14-sheetsage2.md): no Python at run time.
 
 ```bash
-# once: both repositories are gated (accept their terms on Hugging Face, export HF_TOKEN)
-yue2 download --model sheetsage2          # m-a-p/SheetSage2 (229 MB) + its MERT-v2-FullSong parent (2.5 GB), pinned revisions
+# once (public repositories, CC-BY-NC-4.0)
+yue2 download --model sheetsage2-fp16     # merged fp16 pack, 1.4 GB (or --model sheetsage2: upstream release + MERT parent, 2.7 GB, merged at load)
 # transcribe (melody only by default: vocal and instrumental lines, no chord symbols)
 yue2 transcribe --audio excerpt.wav --out run/score     # score.abc, tokens.json, result.json; --chords keeps the chords
 # a song on that score
@@ -139,9 +140,10 @@ yue2 generate --style "…" --lyrics "[Chorus]…[Verse]…[Chorus]…" --cot me
 
 | Option | Default | Effect |
 |---|---|---|
-| `--precision` | `fp16` | `fp16` gives tokens and score identical to `fp32` on the parity excerpts; `bf16` diverges (the score changes) and is kept for comparison only |
+| `--profile` | `16bit-fast` | one of the six transcription profiles ([References.md](References.md#transcription-profiles-yue2-transcribe---profile-sheetsage2profile)); `16bit-lean` for the lowest memory with the same scores |
+| `--precision` | — | `fp32` (byte-identical to upstream) or `bf16` (diverges), unquantized, instead of the profile |
 | `--chords` | off | full lead sheet: chord symbols in the `Vocal` voice |
-| `--model` | `$YUE2_MODELS_DIR/SheetSage2` | the upstream adapter release (merged with `../MERT-v2-FullSong` at load) or a merged snapshot |
+| `--model` | `$YUE2_MODELS_DIR/SheetSage2-fp16`, else `…/SheetSage2` | the fp16 pack, the upstream adapter release (merged with `../MERT-v2-FullSong` at load) or any merged snapshot |
 
 How it works, and what it costs: the encoder always sees a 300 s window (shorter audio is padded with silence, as upstream: its normalization spans the whole window, so a shorter window changes the transcription); songs longer than 300 s are cut into overlapping windows whose decoder continues the previous one. Fidelity: on two excerpts (orchestral, pop) and a 500 s movement, the tokens and the ABC are byte-identical to upstream in `fp32`; `fp16` keeps the small ConvNeXt front in `fp32` (its normalization overflows `fp16`). Measured on the M3 Max (release build, `fp16`, model loaded in 0.6 s): 13 s of audio transcribed in 2.4 s, 30 s in 3.0 s, a 500 s movement (4 windows, 11 236 tokens) in 21 s; footprint 1.6 GB once loaded, 3.3 GB peak on one window, 3.5 GB on 500 s (`fp32`: 2.7 GB, 4.4-4.8 GB peak, +25 % time). The upstream PyTorch on the same Mac (MPS, `fp32`): 7.9 s and 17 GB for the 30 s excerpt, and it collapses past ≈ 3 000 decoding steps (105 GiB on a full window). Greedy decoding is sensitive: on a long, rubato orchestral piece `fp16` drifts from `fp32` after a few hundred tokens (note F1 0.33 between the two), less than a mere change of input resampler does in `fp32` (F1 0.25); the input here is resampled by AVAudioConverter, upstream by ffmpeg, so the same file can give a slightly different score than the Python tool.
 
