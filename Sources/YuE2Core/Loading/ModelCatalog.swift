@@ -26,6 +26,10 @@ public enum YuE2Model: String, CaseIterable, Sendable {
     case lm = "YuE2-3B"
     case vae = "YuE2-Vae"
     case vaeLegacy = "YuE2-Vae-legacy"
+    /// SheetSage2 transcription (audio → ABC, plan/14-sheetsage2.md): adapters + decoder. Gated.
+    case sheetsage2 = "SheetSage2"
+    /// MERT-v2-FullSong, SheetSage2's encoder parent; the adapters are merged into it at load. Gated.
+    case mert2FullSong = "MERT-v2-FullSong"
 
     /// HuggingFace repository id (`m-a-p/…`).
     public var repoID: String {
@@ -33,6 +37,18 @@ public enum YuE2Model: String, CaseIterable, Sendable {
         case .lm: return "m-a-p/YuE2-3B"
         case .vae: return "m-a-p/YuE2-Vae"
         case .vaeLegacy: return "m-a-p/YuE2-Vae-legacy"
+        case .sheetsage2: return "m-a-p/SheetSage2"
+        case .mert2FullSong: return "m-a-p/MERT-v2-FullSong"
+        }
+    }
+
+    /// Git revision files are fetched from. SheetSage2's adapters only fit the MERT parent
+    /// revision its `config.json` pins (`base_model_revision`); MERT's `main` has moved since.
+    public var revision: String {
+        switch self {
+        case .sheetsage2: return "398b22834dac7dd05e09b9c4e40a39fc479ec502"
+        case .mert2FullSong: return "d8ba1c745e733b3908ce6ad16ebeb17ac7600a42"
+        default: return "main"
         }
     }
 
@@ -47,6 +63,8 @@ public enum YuE2Model: String, CaseIterable, Sendable {
             ]
         case .vae, .vaeLegacy:
             return ["config.json", "model.safetensors", "weights_manifest.json"]
+        case .sheetsage2, .mert2FullSong:
+            return ["config.json", "model.safetensors"]
         }
     }
 

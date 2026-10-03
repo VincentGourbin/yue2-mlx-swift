@@ -10,6 +10,7 @@ let package = Package(
     products: [
         // MARK: - Libraries
         .library(name: "YuE2Core", targets: ["YuE2Core"]),
+        .library(name: "SheetSage2Core", targets: ["SheetSage2Core"]),
         // MARK: - CLI Tools
         .executable(name: "yue2", targets: ["YuE2CLI"]),
         .executable(name: "yue2-bench-ui", targets: ["YuE2BenchUI"]),
@@ -40,11 +41,21 @@ let package = Package(
             // simulator builds. Swift auto-links the framework wherever `import CoreAI` compiles.
             linkerSettings: []
         ),
+        // plan/14-sheetsage2.md: audio → ABC transcription, independent of YuE2Core.
+        .target(
+            name: "SheetSage2Core",
+            dependencies: [
+                .product(name: "MLX", package: "mlx-swift"),
+                .product(name: "MLXNN", package: "mlx-swift"),
+                .product(name: "MLXFast", package: "mlx-swift"),
+            ]
+        ),
         // MARK: - CLI Tools
         .executableTarget(
             name: "YuE2CLI",
             dependencies: [
                 "YuE2Core",
+                "SheetSage2Core",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "MLXProfiler", package: "swift-mlx-profiler"),
             ]
@@ -59,7 +70,7 @@ let package = Package(
         // MARK: - Tests
         .testTarget(
             name: "YuE2Tests",
-            dependencies: ["YuE2Core"]
+            dependencies: ["YuE2Core", "SheetSage2Core"]
         ),
     ]
 )

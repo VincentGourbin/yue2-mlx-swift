@@ -16,7 +16,7 @@ struct YuE2CLI: AsyncParsableCommand {
             PlanCommand.self, SemanticCommand.self, ProfileCommand.self,
             GenerateCommand.self, SynthesizeCommand.self, EncodeCommand.self, RemixCommand.self,
             BenchCoreAICommand.self, ReferencesCommand.self,
-            MelodyCommand.self, VaryCommand.self, RegenerateCommand.self],
+            MelodyCommand.self, VaryCommand.self, RegenerateCommand.self, TranscribeCommand.self],
         defaultSubcommand: InfoCommand.self
     )
 }

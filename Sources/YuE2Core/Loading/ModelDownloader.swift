@@ -34,7 +34,7 @@ public actor ModelDownloader {
             let destination = dir.appendingPathComponent(file)
             try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
             if FileManager.default.fileExists(atPath: destination.path) { continue }
-            try await downloadOne(repoID: model.repoID, remotePath: file, to: destination) { written, total in
+            try await downloadOne(repoID: model.repoID, remotePath: file, revision: model.revision, to: destination) { written, total in
                 progress(DownloadProgress(file: file, fileIndex: index, fileCount: files.count, writtenBytes: written, totalBytes: total))
             }
         }
@@ -93,11 +93,11 @@ public actor ModelDownloader {
     }
 
     private func downloadOne(
-        repoID: String, remotePath: String, to destination: URL,
+        repoID: String, remotePath: String, revision: String = "main", to destination: URL,
         progress: @Sendable @escaping (Int64, Int64) -> Void
     ) async throws {
         let partURL = destination.appendingPathExtension("part")
-        guard let url = Self.remoteURL(repoID: repoID, remotePath: remotePath) else {
+        guard let url = Self.remoteURL(repoID: repoID, remotePath: remotePath, revision: revision) else {
             throw YuE2Error.invalidRequest("bad URL for \(repoID)/\(remotePath)")
         }
         var request = URLRequest(url: url)
@@ -118,11 +118,11 @@ public actor ModelDownloader {
         try FileManager.default.moveItem(at: partURL, to: destination)
     }
 
-    /// The exact `resolve/main` URL a file downloads from — exposed for testing without
+    /// The exact `resolve/<revision>` URL a file downloads from — exposed for testing without
     /// making a network request.
-    public static func remoteURL(repoID: String, remotePath: String) -> URL? {
+    public static func remoteURL(repoID: String, remotePath: String, revision: String = "main") -> URL? {
         guard let escaped = remotePath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return nil }
-        return URL(string: "https://huggingface.co/\(repoID)/resolve/main/\(escaped)")
+        return URL(string: "https://huggingface.co/\(repoID)/resolve/\(revision)/\(escaped)")
     }
 
     private static func expectedSHA256(manifestURL: URL, file: String) throws -> String {

@@ -2,9 +2,16 @@
 
 Published versions are squashed commits on `main` (the working history stays local); each version has a tag and a GitHub release.
 
+## 1.5.0 — 2026-10-03
+
+- **SheetSage2 ported to MLX Swift**: new library product `SheetSage2Core` and `yue2 transcribe --audio song.m4a --out run/score` (recording → ABC score, melody only by default, `--chords` for the full lead sheet). No Python any more for covers: `yue2 download --model sheetsage2` fetches the gated upstream release and its MERT-v2-FullSong parent at pinned revisions, the LoRA adapters are merged at load.
+- Parity with upstream: tokens and ABC byte-identical in fp32 on two excerpts (orchestral, pop) and on a 500 s song in four overlapping windows; `fp16` (default) identical on the excerpts, where `bf16` changes the score.
+- M3 Max, fp16: 30 s transcribed in 3.0 s, 500 s in 21 s; 1.6 GB loaded, 3.3-3.5 GB peak (upstream PyTorch MPS: 7.9 s / 17 GB for 30 s, collapses on long songs).
+- `ModelDownloader` fetches a pinned revision per model (`YuE2Model.revision`).
+
 ## 1.4.0 — 2026-10-02
 
-- **Covers from a recording, the upstream way**: SheetSage2 (Python, runs on Apple silicon through MPS) transcribes a mixed song into an ABC score; the song is generated on it with `cot: melody`. Recipe, Mac workarounds and measurements in [docs/CLI.md](docs/CLI.md#covers-from-a-recording-sheetsage2--abc--cot-melody).
+- **Covers from a recording, the upstream way**: SheetSage2 (Python, runs on Apple silicon through MPS) transcribes a mixed song into an ABC score; the song is generated on it with `cot: melody`. Recipe, Mac workarounds and measurements in [docs/CLI.md](docs/CLI.md#covers-from-a-recording-transcribe-sheetsage2--abc--cot-melody).
 - **Forced beginning of score**: `SongRequest.abcPrefix` (`abc_prefix` in the request JSON) / `generate --abc-prefix-file`; the planner continues from the given header and sections in the same key and tempo — a transcribed chorus becomes the opening of a longer song.
 - **Whistled melodies**: `yue2 melody --min-hz/--max-hz/--octave-shift`, automatic octave shift into the singing range, short glides absorbed into the note they lead to.
 - Tried and dropped: keeping a real recording's VAE latents inside a generated song (inpainting, and anchoring it on the first ODE steps only). The model never hears the excerpt (the semantic audio tokenizer is not released), so it is a paste-in at best; not shipped.

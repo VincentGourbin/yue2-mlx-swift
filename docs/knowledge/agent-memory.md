@@ -13,9 +13,10 @@ Transcription dans le dépôt de la mémoire persistante de l'agent (Claude Code
 
 ## État du projet (2026-10-02)
 
-- Publié : v1.3.0 (entrée audio par les entrées natives du modèle), sept profils de référence, trois packs HF, PocketAnthem sur l'App Store (id 6815755463). Page équipe (artefact Claude) à jour en version 9.
+- Publié : v1.4.0 (covers via SheetSage2), v1.3.0 (entrée audio par les entrées natives du modèle), sept profils de référence, trois packs HF, PocketAnthem sur l'App Store (id 6815755463). Page équipe (artefact Claude) à jour en version 9.
 - Mémoire 2026-09 : le pic était le VAE (tuile 1024 fp32), pas le NAR ; résidence par étape ; Core AI VAE GPU valide, NAR Core AI 5-7× plus lent ; iOS coupe le GPU en arrière-plan (porte + checkpoints) ; 2 bits « plus de la musique », 3 bits à la limite ; `4bit-tiny` 2,6 Go.
-- **Entrée audio : voir `handover-audio-input-2026-10-02.md`.** Résumé : fredonnement/chant → ABC fonctionne ; variation et régénération fonctionnent ; inpaint d'un extrait réel et son ancrage réfutés à l'oreille puis **retirés** ; **SheetSage2 → ABC → `cot melody` validé à l'oreille le 2026-10-02** (tourne sur Mac en MPS, env Python séparé, recette dans `docs/CLI.md`). La 1.4.0 (covers SheetSage2, `--abc-prefix-file`, sifflement) est prête, pas encore publiée.
+- **SheetSage2 porté en MLX Swift le 2026-10-03** (`SheetSage2Core`, `yue2 transcribe`, v1.5.0) : parité octet pour octet en fp32, fp16 par défaut, pic 3,3-3,5 Go sur Mac ; l'intégration iPhone est confiée à une autre session (Vincent), point d'entrée `docs/iOS.md` § Transcription et plan/14.
+- **Entrée audio : voir `handover-audio-input-2026-10-02.md`.** Résumé : fredonnement/chant → ABC fonctionne ; variation et régénération fonctionnent ; inpaint d'un extrait réel et son ancrage réfutés à l'oreille puis **retirés** ; **SheetSage2 → ABC → `cot melody` validé à l'oreille le 2026-10-02** (tourne sur Mac en MPS, env Python séparé, recette dans `docs/CLI.md`). **v1.4.0 publiée le 2026-10-02** (covers SheetSage2, `--abc-prefix-file`, sifflement ; démo Beethoven 5 domaine public + sifflement réel en pièces jointes).
 - Reste ouvert d'avant : écoute des profils rapides et des pas d'ODE réduits, remesure iPhone avec la 1.3.0, proposition de fork mlx-core (Q7).
 
 ## Pièges durables

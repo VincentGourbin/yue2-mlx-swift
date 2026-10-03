@@ -17,7 +17,7 @@ Listed in [awesome-YuE](https://github.com/RevolutionLA/awesome-YuE), the curate
 | [The reference configurations](docs/References.md) | which pack, which settings, for which machine |
 | [Benchmarks: method, results, reproduction](docs/Benchmarks.md) | protocol, Mac and iPhone tables, Core AI, how to contribute |
 | [Command line](docs/CLI.md) | every `yue2` command and option |
-| [Swift API](docs/API.md) | `ModelSession`, `YuE2Pipeline`, residency, checkpoints, GPU gate, VAE backends |
+| [Swift API](docs/API.md) | `ModelSession`, `YuE2Pipeline`, residency, checkpoints, GPU gate, VAE backends, `SheetSage2Core` transcription |
 | [iPhone](docs/iOS.md) | integration, losing the GPU in the background, on-device measurements |
 | [Weights and packs](docs/Weights.md) | download, the published prequantized packs, licence |
 | [Engineering knowledge base](docs/knowledge/index.md) | measurement log, decisions and verified pitfalls (OKF, in French, readable by humans and agents) |
@@ -88,10 +88,10 @@ On the iPhone 15 Pro Max (`4bit-lean`): a 30 s song in 273 s, 60 s in ≈ 12.7 m
 1. **Reproduces YuE2 inference faithfully** in MLX Swift, module by module, with numerical proof at every step (PyTorch fixtures, tolerances fixed before porting: VAE fp32 max 2e-3, LM bf16 rel < 2 %, exact greedy tokens).
 2. **Fits in a phone**: 4 / 8-bit quantization per branch, stage-scoped weight residency (the budget is the largest stage, not the sum), per-step ODE checkpoints and a GPU gate to survive iOS cutting the GPU in the background, memory limits sized from available memory.
 3. **Measures before claiming**: every number comes from `swift-mlx-profiler`, with cool-down, A/B/B/A and a control; the log of measurements, decisions and pitfalls lives in `docs/knowledge/`.
-4. **Takes audio in through the model's own entries**: a hummed melody becomes the ABC score the song follows (`yue2 melody`), a saved song gets variations (`yue2 vary`, SDEdit on its latents) or a new second half (`yue2 regenerate`, kept part re-imposed at every ODE step); a real song is transcribed by SheetSage2 (Python, MPS) into a score the cover is generated on (`cot: melody`, `--abc-file` or `--abc-prefix-file`). The model has no audio understanding at inference, so these are the honest paths; details in [docs/CLI.md](docs/CLI.md#audio-in-melody-vary-regenerate) and [covers](docs/CLI.md#covers-from-a-recording-sheetsage2--abc--cot-melody).
+4. **Takes audio in through the model's own entries**: a hummed melody becomes the ABC score the song follows (`yue2 melody`), a saved song gets variations (`yue2 vary`, SDEdit on its latents) or a new second half (`yue2 regenerate`, kept part re-imposed at every ODE step); a real song is transcribed into a score by `yue2 transcribe` (SheetSage2, ported to MLX Swift as `SheetSage2Core`) and the cover is generated on it (`cot: melody`, `--abc-file` or `--abc-prefix-file`). The model has no audio understanding at inference, so these are the honest paths; details in [docs/CLI.md](docs/CLI.md#audio-in-melody-vary-regenerate) and [covers](docs/CLI.md#covers-from-a-recording-transcribe-sheetsage2--abc--cot-melody).
 5. **Serves as a test bed for plan execution by coding agents**: task cards in `tasks/`, the plan in `plan/`.
 
-Out of scope: a Swift port of MERT2 and SheetSage2 (SheetSage2 runs alongside in Python), `cot: off` (supported, not measured), bit-exact reproduction of PyTorch's random generator (parity on injected noise).
+Out of scope: MERT2 embeddings as a feature (only SheetSage2's transcription is ported), `cot: off` (supported, not measured), bit-exact reproduction of PyTorch's random generator (parity on injected noise).
 
 ## Parity and tests
 

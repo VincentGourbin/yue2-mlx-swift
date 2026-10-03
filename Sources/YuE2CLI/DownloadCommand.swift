@@ -15,7 +15,7 @@ struct DownloadCommand: AsyncParsableCommand {
     @Option(name: .long, help: "Directory to download checkpoints into (defaults to $YUE2_MODELS_DIR).")
     var modelsDir: String?
 
-    @Option(name: .long, help: "Comma-separated targets: lm, vae, vae-legacy, packs (all three prequantized packs), or a pack name (int4-mixed-head, qint8-all-head, int4-head).")
+    @Option(name: .long, help: "Comma-separated targets: lm, vae, vae-legacy, sheetsage2 (transcription: SheetSage2 + its MERT-v2 parent, gated, needs HF_TOKEN), packs (all three prequantized packs), or a pack name (int4-mixed-head, qint8-all-head, int4-head).")
     var model: String = "lm,vae"
 
     func run() async throws {
@@ -52,6 +52,7 @@ struct DownloadCommand: AsyncParsableCommand {
             case "lm": targets.append(.model(.lm))
             case "vae": targets.append(.model(.vae))
             case "vae-legacy": targets.append(.model(.vaeLegacy))
+            case "sheetsage2": targets.append(contentsOf: [.model(.sheetsage2), .model(.mert2FullSong)])
             case "packs": targets.append(contentsOf: YuE2Pack.allCases.map(Target.pack))
             case let name:
                 guard let pack = YuE2Pack(rawValue: name) else {

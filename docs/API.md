@@ -98,6 +98,28 @@ let saved = try SongResult.load(from: directory)                               /
 
 Underneath: `SemanticGenerator.generateSemantic(plan:sampling:continuation:onToken:cancel:)` takes the kept tokens as the AR's past; `Synthesizer.synthesize(... edit: NAREdit?)` with `.variation(latents:strength:)` (start state `noise·t + latents·(1−t)`, `round((1−strength)·steps)` steps skipped) or `.keep(latents:frames:)` (kept frames re-imposed after every step, returned bit-exact); `CachedNAR.solve(... keep:)` is the inpainting mask. `MelodyTranscriber` is pure CPU (vDSP), deterministic, tested on synthetic tones; `NAREditTests` covers the two edits on the tiny model.
 
+## Transcription: `SheetSage2Core` (recording → ABC)
+
+A separate library product, independent of `YuE2Core` (MLX only): the SheetSage2 port. Its output is the `SongRequest.abc` / `abcPrefix` of a cover with `cot: melody`.
+
+```swift
+import SheetSage2Core
+
+// the upstream adapter release + its MERT-v2 parent (`yue2 download --model sheetsage2`), merged at load
+let model = try SheetSage2Model.load(directory: modelsDir.appendingPathComponent("SheetSage2"))   // fp16 by default
+let waveform: MLXArray = …                     // [samples] float32, 24 kHz mono, not normalized
+let result = try SheetSage2Transcriber(model: model).transcribe(waveform, melodyOnly: true) { window, token in … }
+result.abc               // String? — nil when the events do not make a score (result.abcError says why)
+result.events            // [SheetSage2Event]: time, beat/meter, key, chord, structure, melody notes
+result.tokens            // [[Int]], one greedy sequence per 300 s window
+
+var request = SongRequest(style: style, lyrics: lyrics)
+request.abc = result.abc                       // or request.abcPrefix: the planner continues it
+request.cot = .melody
+```
+
+Underneath: `SheetSage2Model.encode(_:)` (log-mel, ConvNeXt, 24 Conformer blocks, layer mix: `[1, 7500, 512]` per window), `decode(_:memory:cache:)` (BART, preallocated KV cache), `SheetSage2Generator` (grammar-masked greedy decoding), `SheetSage2Tokenizer.decodeSequence`, `AbcNotation.abc(events:duration:melodyOnly:)`. `SheetSage2Weights.mergeAdapters` merges the LoRA factors (`W += B·A·α/r`, float32, CPU). Parity: tokens and ABC byte-identical to upstream in float32 (tiny fixture, two excerpts, a 500 s song in four windows); see plan/14-sheetsage2.md.
+
 ## Losing the GPU in the background (iOS)
 
 iOS refuses every GPU submission from an app that is not in the foreground, and mlx-core raises the error inside the Metal completion handler, where it cannot be caught. The engine stops before that:

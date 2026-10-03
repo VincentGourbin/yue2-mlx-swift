@@ -10,6 +10,7 @@ les sous-répertoires accumulent les conclusions durables.
 ## Benchmarks
 Mesures reproductibles (état des horloges GPU, écart ±2 %).
 - [iPhone 15 Pro Max, premier balayage (E5)](benchmarks/iphone-15-pro-max-2026-09-22.md) — AR 25 tok/s, NAR 2,6 ms/frame/éval à froid puis ×1,6 dès que `thermalState` passe à fair (≈ 60 s de charge), VAE 6 s / 41 s d'audio ; clip de 30 s réel en 273 s, pic 3,6 Go.
+- [SheetSage2 sur iPhone : mesures Mac et chiffrage](benchmarks/sheetsage2-port-estimate-2026-10-03.md) — encodeur toujours sur 300 s (4,4 s Mac), décodeur 5,5 ms/pas ; iPhone estimé ≈ 30 s pour un extrait, 1-1,5 min pour 3 min, pic ≈ 1,7 Go fp16 ; 8-11 jours, le symbolique pèse plus que le réseau.
 
 ## Decisions
 Choix d'architecture motivés (pourquoi telle voie, tel dtype, tel cache).

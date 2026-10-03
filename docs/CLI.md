@@ -16,6 +16,7 @@ Binary produced by `xcodebuild -scheme yue2 -configuration Release -destination 
 | `encode` | audio → latents (VAE encoder), optional round trip |
 | `references` | lists the reference configurations |
 | `melody` | hummed or sung recording → ABC score the model takes as its plan |
+| `transcribe` | mixed recording → ABC score (SheetSage2 port), for covers with `cot melody` |
 | `vary` | variation of a saved song (same score and tokens, SDEdit on its latents) |
 | `regenerate` | keeps a saved song up to a point in time, regenerates the rest |
 | `parity vae|lm|nar` | numerical parity against the PyTorch dumps |
@@ -74,6 +75,7 @@ yue2 decode     --latents run/song/latent.npy --out run/song/audio.wav --precisi
 yue2 download --models-dir $YUE2_MODELS_DIR            # lm,vae ; --model lm,vae,vae-legacy
 yue2 download --model int4-mixed-head                  # a published prequantized pack (2.5 GB)
 yue2 download --model packs                            # all three packs (10.4 GB)
+yue2 download --model sheetsage2                       # SheetSage2 + MERT-v2-FullSong (gated: HF_TOKEN), for transcribe
 yue2 info
 ```
 
@@ -102,7 +104,7 @@ Real fixtures come from `Scripts/reference/real_fixtures.py {vae|lm|nar|song}` (
 
 ## Audio in: `melody`, `vary`, `regenerate`
 
-The model has no audio understanding at inference: the semantic audio tokenizer it was trained with is not released, so a recording cannot be turned into its tokens, and injecting a recording's VAE latents into the solve only pastes it in (tried and dropped). What it does accept is its own artifacts: an ABC score as the plan, semantic tokens as the AR past, latents as the start state of the acoustic solve. The three commands feed those entries from a recording or from a previous run.
+The model itself has no audio understanding at inference (a recording reaches it as a score, through `melody` or `transcribe`): the semantic audio tokenizer it was trained with is not released, so a recording cannot be turned into its tokens, and injecting a recording's VAE latents into the solve only pastes it in (tried and dropped). What it does accept is its own artifacts: an ABC score as the plan, semantic tokens as the AR past, latents as the start state of the acoustic solve. The three commands feed those entries from a recording or from a previous run.
 
 ```bash
 # 1. hum or sing a melody (mono, any format AVFoundation reads), 100 BPM by default
@@ -120,28 +122,30 @@ yue2 regenerate --song run/song --from-seconds 20 --seed 3 --reference 4bit-fast
 
 `vary --strength` is the SDEdit ratio: 0 returns the source latents unchanged, 1 is a fresh synthesis; 0.3-0.5 keeps the arrangement and changes the texture, 0.6-0.8 drifts further. The solve runs `round(strength × steps)` steps instead of 32, so a 0.4 variation costs 40 % of a full NAR. `regenerate --from-seconds` is rounded to a 40 ms frame; the kept frames are re-imposed after every ODE step (RePaint-style mask) and returned bit-exact, the seam is continuous by construction. By default the regenerated song keeps the source's length (the AR is cut there if it has not ended the song); `--free-length` lets the AR decide, and a song re-conditioned on its first half readily grows to two or three times its length. Both read the `generate --out` directory (`plan.json`, `semantic.npy`, `latent.npy`, `config.json`) and write a full one. Single-chunk songs only.
 
-## Covers from a recording: SheetSage2 → ABC → `cot melody`
+## Covers from a recording: `transcribe` (SheetSage2) → ABC → `cot melody`
 
-For a mixed recording (a real song, not a hummed line), the upstream route goes through the score: [SheetSage2](https://huggingface.co/m-a-p/SheetSage2) (gated, CC-BY-NC-4.0, PyTorch, built on MERT-v2-FullSong) transcribes the audio into an ABC score in the model's dialect, and the song is generated on that score with `cot: melody` (the melody is held, the accompaniment and the style come from the prompt). SheetSage2 is not ported; it runs in its own Python environment, on Apple silicon through MPS.
+For a mixed recording (a real song, not a hummed line), the upstream route goes through the score: [SheetSage2](https://huggingface.co/m-a-p/SheetSage2) transcribes the audio into an ABC score in the model's dialect, and the song is generated on that score with `cot: melody` (the melody is held, the accompaniment and the style come from the prompt). SheetSage2 is ported to MLX Swift (`SheetSage2Core`, plan/14-sheetsage2.md): no Python at run time.
 
 ```bash
-# once: Python 3.10/3.11 environment, CPU/MPS torch (the upstream README targets CUDA)
-uv venv --python 3.11 .venv && uv pip install --python .venv/bin/python "huggingface-hub==0.36.0"
-.venv/bin/huggingface-cli download m-a-p/SheetSage2 --local-dir SheetSage2
-uv pip install --python .venv/bin/python -r SheetSage2/requirements.txt
-# transformers 4.45 copies only part of a local repo's modules: copy them all into its module cache
-M=~/.cache/huggingface/modules/transformers_modules/SheetSage2; mkdir -p "$M" && cp SheetSage2/*.py "$M"/
-
-# transcribe (melody only: vocal and instrumental lines, no chord symbols) → cover-score/score.abc
-(cd SheetSage2 && ../.venv/bin/python infer.py ../excerpt.wav --output ../cover-score --device mps --melody-only)
-
+# once: both repositories are gated (accept their terms on Hugging Face, export HF_TOKEN)
+yue2 download --model sheetsage2          # m-a-p/SheetSage2 (229 MB) + its MERT-v2-FullSong parent (2.5 GB), pinned revisions
+# transcribe (melody only by default: vocal and instrumental lines, no chord symbols)
+yue2 transcribe --audio excerpt.wav --out run/score     # score.abc, tokens.json, result.json; --chords keeps the chords
 # a song on that score
-yue2 generate --style "…, A minor, 131 BPM" --lyrics "[Chorus]…" --cot melody --abc-file cover-score/score.abc --out run/cover
+yue2 generate --style "…, A minor, 131 BPM" --lyrics "[Chorus]…" --cot melody --abc-file run/score/score.abc --out run/cover
 # or that score as the opening of a longer song: the planner continues it (verses, repeats) in the same key and tempo
-yue2 generate --style "…" --lyrics "[Chorus]…[Verse]…[Chorus]…" --cot melody --abc-prefix-file cover-score/score.abc --out run/around
+yue2 generate --style "…" --lyrics "[Chorus]…[Verse]…[Chorus]…" --cot melody --abc-prefix-file run/score/score.abc --out run/around
 ```
 
-Measured on a 13 s excerpt of a mixed song (M3 Max): transcription in 43 s including the model load, 16.5 GB peak footprint; a clean eight-bar hook with key, tempo and section. Put the key and tempo SheetSage2 found (`K:`, `Q:`) in the style prompt. With `--abc-file` alone the AR may sing past the end of a short score; with `--abc-prefix-file` the planner tends to repeat the given section before writing new ones. Read the score before generating: it is the edit point (fix a note, change the tempo, add sections by hand).
+| Option | Default | Effect |
+|---|---|---|
+| `--precision` | `fp16` | `fp16` gives tokens and score identical to `fp32` on the parity excerpts; `bf16` diverges (the score changes) and is kept for comparison only |
+| `--chords` | off | full lead sheet: chord symbols in the `Vocal` voice |
+| `--model` | `$YUE2_MODELS_DIR/SheetSage2` | the upstream adapter release (merged with `../MERT-v2-FullSong` at load) or a merged snapshot |
+
+How it works, and what it costs: the encoder always sees a 300 s window (shorter audio is padded with silence, as upstream: its normalization spans the whole window, so a shorter window changes the transcription); songs longer than 300 s are cut into overlapping windows whose decoder continues the previous one. Fidelity: on two excerpts (orchestral, pop) and a 500 s movement, the tokens and the ABC are byte-identical to upstream in `fp32`; `fp16` keeps the small ConvNeXt front in `fp32` (its normalization overflows `fp16`). Measured on the M3 Max (release build, `fp16`, model loaded in 0.6 s): 13 s of audio transcribed in 2.4 s, 30 s in 3.0 s, a 500 s movement (4 windows, 11 236 tokens) in 21 s; footprint 1.6 GB once loaded, 3.3 GB peak on one window, 3.5 GB on 500 s (`fp32`: 2.7 GB, 4.4-4.8 GB peak, +25 % time). The upstream PyTorch on the same Mac (MPS, `fp32`): 7.9 s and 17 GB for the 30 s excerpt, and it collapses past ≈ 3 000 decoding steps (105 GiB on a full window). Greedy decoding is sensitive: on a long, rubato orchestral piece `fp16` drifts from `fp32` after a few hundred tokens (note F1 0.33 between the two), less than a mere change of input resampler does in `fp32` (F1 0.25); the input here is resampled by AVAudioConverter, upstream by ffmpeg, so the same file can give a slightly different score than the Python tool.
+
+Put the key and tempo SheetSage2 found (`K:`, `Q:`) in the style prompt. With `--abc-file` alone the AR may sing past the end of a short score; with `--abc-prefix-file` the planner tends to repeat the given section before writing new ones. Read the score before generating: it is the edit point (fix a note, change the tempo, add sections by hand).
 
 ## `encode`, `remix-experimental`
 

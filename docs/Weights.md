@@ -9,8 +9,10 @@
 | `YuE2-Vae-legacy/` | older VAE, optional | 0.5 GB | CC-BY-NC-4.0 |
 | `YuE2-3B/mlx-prequantized/<preset>[-head]/model.safetensors` | **produced locally** on the first use of a preset | 2.4-5.5 GB | derivative, same licence |
 | `YuE2-Vae/coreai/*.aimodel`, `YuE2-3B/coreai/*.aimodel` | `Scripts/coreai/export_*.py` | 0.13 / 1.3 GB | derivative |
+| `SheetSage2/` | `m-a-p/SheetSage2` @ `398b228` (LoRA adapters + BART decoder, fp32), for `yue2 transcribe` | 0.23 GB | CC-BY-NC-4.0, gated |
+| `MERT-v2-FullSong/` | `m-a-p/MERT-v2-FullSong` @ `d8ba1c7` (the parent revision SheetSage2 pins, not `main`) | 2.5 GB | CC-BY-NC-4.0, gated |
 
-`yue2 download` fetches the first two. The code in this repository is MIT; the weights are never distributed here.
+`yue2 download` fetches the first two; `yue2 download --model sheetsage2` the last two (accept both repositories' terms on Hugging Face and export `HF_TOKEN`). The adapters are merged into MERT at load; no merged copy is published. The code in this repository is MIT; the weights are never distributed here.
 
 ## The prequantized packs
 
