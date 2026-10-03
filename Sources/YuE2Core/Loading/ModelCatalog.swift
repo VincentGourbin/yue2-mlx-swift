@@ -33,6 +33,10 @@ public enum YuE2Model: String, CaseIterable, Sendable {
     /// The same two merged and cast to fp16 (1.4 GB, CC-BY-NC-4.0 derivative published by the
     /// author, `Scripts/publish-sheetsage2-pack.sh`): no merge at load, half the download.
     case sheetsage2FP16 = "SheetSage2-fp16"
+    /// Prequantized packs for the `8bit-*` / `4bit-*` transcription profiles (Conformer linear
+    /// layers 8 / 4 bits, group 64, MLX layout; decoder fp16, ConvNeXt front fp32).
+    case sheetsage2Q8 = "SheetSage2-q8"
+    case sheetsage2Q4 = "SheetSage2-q4"
 
     /// HuggingFace repository id (`m-a-p/…`).
     public var repoID: String {
@@ -43,6 +47,8 @@ public enum YuE2Model: String, CaseIterable, Sendable {
         case .sheetsage2: return "m-a-p/SheetSage2"
         case .mert2FullSong: return "m-a-p/MERT-v2-FullSong"
         case .sheetsage2FP16: return "VincentGOURBIN/sheetsage2-mlx-fp16"
+        case .sheetsage2Q8: return "VincentGOURBIN/sheetsage2-mlx-q8"
+        case .sheetsage2Q4: return "VincentGOURBIN/sheetsage2-mlx-q4"
         }
     }
 
@@ -69,7 +75,7 @@ public enum YuE2Model: String, CaseIterable, Sendable {
             return ["config.json", "model.safetensors", "weights_manifest.json"]
         case .sheetsage2, .mert2FullSong:
             return ["config.json", "model.safetensors"]
-        case .sheetsage2FP16:
+        case .sheetsage2FP16, .sheetsage2Q8, .sheetsage2Q4:
             return ["config.json", "model.safetensors.sha256", "model.safetensors"]
         }
     }

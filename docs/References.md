@@ -69,15 +69,15 @@ The SheetSage2 port has its own `<bits>bit-fast|lean` profiles (`Sources/SheetSa
 
 M3 Max, release build, idle GPU, 30 s cool-down; fidelity against the fp32 transcription, which is byte-identical to upstream (excerpts: same tokens and ABC; 500 s: note F1, pitch + onset ± 50 ms — for scale, changing only the input resampler gives F1 0.25 in fp32).
 
-| Id | 30 s excerpt | 500 s song | Peak (30 s / 500 s) | Resident after load | Fidelity |
-|---|---|---|---|---|---|
-| `16bit-fast` | 3.0 s | 20.9 s | 3.3 / 3.6 GB | 1.6 GB | ABC identical on both excerpts; 500 s F1 0.33 |
-| `16bit-lean` | 3.2 s | 22.1 s | **2.2 / 2.4 GB** | 1.6 GB | ABC identical on both excerpts; 500 s F1 0.32 |
-| `8bit-fast` | 3.0 s | 21.6 s | 2.8 / 3.1 GB | 1.9 GB¹ | pop excerpt identical from the file, orchestral score changed (tempo 151 vs 172, motif rewritten); F1 0.17 |
-| `8bit-lean` | 3.1 s | 21.2 s | 1.9 / 1.9 GB¹ | 1.9 GB¹ | as `8bit-fast`; F1 0.18 |
-| `4bit-fast` | 2.9 s | 20.8 s | 2.5 / 2.8 GB | 1.6 GB¹ | pop: one note added; orchestral changed; F1 0.26 |
-| `4bit-lean` | 3.1 s | 21.3 s | 1.6 / 1.6 GB¹ | 1.6 GB¹ | as `4bit-fast`; F1 0.20 |
+| Id | Weights (pack) | Load | 30 s excerpt | 500 s song | Peak, 30 s | Fidelity |
+|---|---|---|---|---|---|---|
+| `16bit-fast` | `sheetsage2-fp16`, 1.4 GB | 0.2 s | 3.0 s | 20.9 s | 3.3 GB | ABC identical on both excerpts; 500 s F1 0.33 |
+| `16bit-lean` | `sheetsage2-fp16` | 0.2 s | 3.2 s | 22.1 s | **2.2 GB** | ABC identical on both excerpts; 500 s F1 0.32 |
+| `8bit-fast` | `sheetsage2-q8`, 0.9 GB | 0.19 s | 3.0 s | 21.6 s | 2.8 GB | pop excerpt identical from the file, orchestral score changed (tempo 151 vs 172, motif rewritten); F1 0.17 |
+| `8bit-lean` | `sheetsage2-q8` | 0.19 s | 3.1 s | 21.2 s | **1.7 GB** | as `8bit-fast`; F1 0.18 |
+| `4bit-fast` | `sheetsage2-q4`, 0.6 GB | 0.16 s | 2.9 s | 20.8 s | 2.5 GB¹ | pop: one note added; orchestral changed; F1 0.26 |
+| `4bit-lean` | `sheetsage2-q4` | 0.16 s | 3.1 s | 21.3 s | **1.4 GB** | as `4bit-fast`; F1 0.20 |
 
-¹ MLX holds 0.92 GB (8-bit) and 0.63 GB (4-bit) of weights; the footprint keeps the transient of quantizing a loaded fp16 model. A prequantized pack would load at those sizes directly.
+Load and peaks measured with the packs (`yue2 transcribe --load-only`, footprint sampler); ¹ measured with the on-the-fly quantization, before the packs. Without its pack, a quantized profile quantizes the float16 model at every load: 0.33 s and a 1.6-1.9 GB load footprint instead of 0.16-0.19 s and 0.6-0.9 GB (`lean` reloads at every transcription, so it pays this each time). The packs are bit-identical to that on-the-fly quantization (GPU kernel; `SheetSage2QuantizedPackTests`), so the scores and the transcription times are the same. Transcription times: the quantized matmul does not speed the encoder up on 7 500 frames (≈ the fp16 GEMM), the gain is memory.
 
-Recommended: `16bit-fast` on a Mac, `16bit-lean` on an iPhone (−1.1 GB for +5 % time, same scores). The quantized profiles are measured, not adopted: they change scores on rubato orchestral material (both readings are plausible; the 8-bit one is closer to the written motif) and save only 0.3-0.6 GB more.
+Recommended: `16bit-fast` on a Mac, `16bit-lean` on an iPhone (−1.1 GB for +5 % time, same scores). The quantized profiles save another 0.5-0.8 GB (`8bit-lean` 1.7 GB, `4bit-lean` 1.4 GB, with their packs) but change scores on rubato orchestral material (both readings are plausible; the 8-bit one is closer to the written motif): measured, offered, not the default.

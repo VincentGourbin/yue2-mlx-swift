@@ -76,6 +76,7 @@ yue2 download --models-dir $YUE2_MODELS_DIR            # lm,vae ; --model lm,vae
 yue2 download --model int4-mixed-head                  # a published prequantized pack (2.5 GB)
 yue2 download --model packs                            # all three packs (10.4 GB)
 yue2 download --model sheetsage2-fp16                  # merged fp16 SheetSage2 pack (1.4 GB), for transcribe
+yue2 download --model sheetsage2-q8,sheetsage2-q4      # prequantized packs of the 8/4-bit transcription profiles (0.9 / 0.6 GB)
 yue2 download --model sheetsage2                       # or the upstream release + MERT-v2-FullSong (2.7 GB), merged at load
 yue2 info
 ```
@@ -143,7 +144,8 @@ yue2 generate --style "…" --lyrics "[Chorus]…[Verse]…[Chorus]…" --cot me
 | `--profile` | `16bit-fast` | one of the six transcription profiles ([References.md](References.md#transcription-profiles-yue2-transcribe---profile-sheetsage2profile)); `16bit-lean` for the lowest memory with the same scores |
 | `--precision` | — | `fp32` (byte-identical to upstream) or `bf16` (diverges), unquantized, instead of the profile |
 | `--chords` | off | full lead sheet: chord symbols in the `Vocal` voice |
-| `--model` | `$YUE2_MODELS_DIR/SheetSage2-fp16`, else `…/SheetSage2` | the fp16 pack, the upstream adapter release (merged with `../MERT-v2-FullSong` at load) or any merged snapshot |
+| `--load-only` | off | load the model, print load time and footprint, stop |
+| `--model` | the profile's pack (`SheetSage2-q8`, `-q4`, `-fp16`), else `…/SheetSage2` | the fp16 pack, the upstream adapter release (merged with `../MERT-v2-FullSong` at load) or any merged snapshot |
 
 How it works, and what it costs: the encoder always sees a 300 s window (shorter audio is padded with silence, as upstream: its normalization spans the whole window, so a shorter window changes the transcription); songs longer than 300 s are cut into overlapping windows whose decoder continues the previous one. Fidelity: on two excerpts (orchestral, pop) and a 500 s movement, the tokens and the ABC are byte-identical to upstream in `fp32`; `fp16` keeps the small ConvNeXt front in `fp32` (its normalization overflows `fp16`). Measured on the M3 Max (release build, `fp16`, model loaded in 0.6 s): 13 s of audio transcribed in 2.4 s, 30 s in 3.0 s, a 500 s movement (4 windows, 11 236 tokens) in 21 s; footprint 1.6 GB once loaded, 3.3 GB peak on one window, 3.5 GB on 500 s (`fp32`: 2.7 GB, 4.4-4.8 GB peak, +25 % time). The upstream PyTorch on the same Mac (MPS, `fp32`): 7.9 s and 17 GB for the 30 s excerpt, and it collapses past ≈ 3 000 decoding steps (105 GiB on a full window). Greedy decoding is sensitive: on a long, rubato orchestral piece `fp16` drifts from `fp32` after a few hundred tokens (note F1 0.33 between the two), less than a mere change of input resampler does in `fp32` (F1 0.25); the input here is resampled by AVAudioConverter, upstream by ffmpeg, so the same file can give a slightly different score than the Python tool.
 

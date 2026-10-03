@@ -2,6 +2,11 @@
 
 Published versions are squashed commits on `main` (the working history stays local); each version has a tag and a GitHub release.
 
+## 1.7.0 — 2026-10-03
+
+- **Prequantized SheetSage2 packs** for the 8/4-bit transcription profiles (ASK Q10 from the app): [`VincentGOURBIN/sheetsage2-mlx-q8`](https://huggingface.co/VincentGOURBIN/sheetsage2-mlx-q8) (0.9 GB) and [`sheetsage2-mlx-q4`](https://huggingface.co/VincentGOURBIN/sheetsage2-mlx-q4) (0.6 GB), CC-BY-NC-4.0 derivatives; `yue2 download --model sheetsage2-q8,sheetsage2-q4`, `YuE2Model.sheetsage2Q8/.sheetsage2Q4`. `SheetSage2Model.load(directory:profile:)` loads a pack (`weights_format: mlx-quantized`) without requantizing: 0.16-0.19 s and 0.6-0.9 GB instead of 0.33 s and 1.6-1.9 GB; transcription peaks `8bit-lean` 1.7 GB, `4bit-lean` 1.4 GB. The packs are bit-identical to the profiles' on-the-fly (GPU) quantization.
+- `yue2 sheetsage2-pack --bits 8|4` writes a pack; `yue2 transcribe --load-only` measures a load; `transcribe` picks the profile's pack by default.
+
 ## 1.6.0 — 2026-10-03
 
 - **Transcription profiles** `16bit-fast|lean`, `8bit-fast|lean`, `4bit-fast|lean` (`SheetSage2Profile`, `yue2 transcribe --profile`), as for YuE2. *Lean*: STFT and ConvNeXt by chunks (the global GRN normalization in two passes), every window encoded then the encoder released before decoding, 128 MB MLX cache. `16bit-lean`: 2.2-2.4 GB peak instead of 3.3-3.6 GB for +5 % time, same scores. The quantized profiles (encoder only) are measured, not adopted: they change orchestral scores. Table in [docs/References.md](docs/References.md#transcription-profiles-yue2-transcribe---profile-sheetsage2profile).

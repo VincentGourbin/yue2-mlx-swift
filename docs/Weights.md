@@ -16,7 +16,9 @@
 
 | `SheetSage2-fp16/` | [`VincentGOURBIN/sheetsage2-mlx-fp16`](https://huggingface.co/VincentGOURBIN/sheetsage2-mlx-fp16): the two above merged and cast to fp16 (ConvNeXt front and mel buffers kept fp32), SHA-256 verified — `yue2 download --model sheetsage2-fp16` | 1.4 GB | CC-BY-NC-4.0 derivative (`Scripts/publish-sheetsage2-pack.sh`) |
 
-With the pack, `yue2 transcribe` loads in 0.2 s and 1.4 GB, and gives the same tokens and scores as the upstream release under the `16bit-*` profiles (`SheetSage2FP16PackTests`); it is the default `--model` when present. The adapters are merged into MERT at load; no merged copy is published. The code in this repository is MIT; the weights are never distributed here.
+| `SheetSage2-q8/`, `SheetSage2-q4/` | [`VincentGOURBIN/sheetsage2-mlx-q8`](https://huggingface.co/VincentGOURBIN/sheetsage2-mlx-q8), [`…-q4`](https://huggingface.co/VincentGOURBIN/sheetsage2-mlx-q4): prequantized packs of the `8bit-*` / `4bit-*` profiles (Conformer linear layers 8 / 4 bits, MLX layout), written by `yue2 sheetsage2-pack` — `yue2 download --model sheetsage2-q8,sheetsage2-q4` | 0.9 / 0.6 GB | CC-BY-NC-4.0 derivatives |
+
+With the pack, `yue2 transcribe` loads in 0.2 s and 1.4 GB, and gives the same tokens and scores as the upstream release under the `16bit-*` profiles (`SheetSage2FP16PackTests`); it is the default `--model` when present; the 8/4-bit profiles take their own pack first (bit-identical to quantizing at load, 0.16-0.19 s and 0.6-0.9 GB). The adapters are merged into MERT at load; no merged copy is published. The code in this repository is MIT; the weights are never distributed here.
 
 ## The prequantized packs
 

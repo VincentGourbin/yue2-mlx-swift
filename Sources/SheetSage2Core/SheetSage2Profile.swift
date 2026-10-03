@@ -48,10 +48,15 @@ extension SheetSage2Model {
     /// Loads `directory` (merged snapshot or upstream adapter release) configured for `profile`.
     public static func load(directory: URL, parentDirectory: URL? = nil, profile: SheetSage2Profile) throws -> SheetSage2Model {
         let model = try load(directory: directory, parentDirectory: parentDirectory, dtype: .float16, subsamplingFloat32: true)
-        if let bits = profile.quantizationBits {
-            quantize(model: model, groupSize: 64, bits: bits) { path, module in
-                module is Linear && path.hasPrefix("encoder.layers.")
+        if let packed = model.config.quantization {
+            // A prequantized pack (ASK Q10): it must be the profile's own quantization.
+            guard packed.bits == profile.bits else {
+                throw SheetSage2Error.weightMismatch("\(packed.bits)-bit pack loaded for profile \(profile.id)")
             }
+        } else if let bits = profile.quantizationBits {
+            // Quantized on the fly from float16: works from any snapshot, but the load then pays
+            // the quantization and keeps its float16 transient (prefer the matching pack).
+            SheetSage2Pack.quantizeEncoder(model, bits: bits, groupSize: SheetSage2Pack.groupSize)
             for (_, value) in model.parameters().flattened() { eval(value) }
             Memory.clearCache()
         }

@@ -133,6 +133,9 @@ extension SheetSage2Model {
         directory: URL, parentDirectory: URL? = nil, dtype: DType = .float16, subsamplingFloat32: Bool = true
     ) throws -> SheetSage2Model {
         let config = try SheetSage2Config.load(directory.appendingPathComponent("config.json"))
+        if config.weightsFormat == SheetSage2Pack.weightsFormat {
+            return try SheetSage2Pack.load(directory: directory, config: config)
+        }
         let model = SheetSage2Model(config: config)
         let weights: [String: MLXArray]
         switch config.weightsFormat {

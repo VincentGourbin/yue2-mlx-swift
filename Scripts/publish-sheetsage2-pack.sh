@@ -7,11 +7,65 @@
 # cast to float16, except what every profile keeps in float32 (mel front-end buffers, ConvNeXt
 # front, layer-mix logits): loading it gives exactly the model `SheetSage2Model.load(profile:)`
 # builds from the upstream release.
-# Usage: Scripts/publish-sheetsage2-pack.sh [staging dir, default .local-runs/hf-sheetsage2] [repo id]
+#
+# `q8` / `q4`: the prequantized packs of the 8/4-bit profiles (ASK Q10), written by
+# `yue2 sheetsage2-pack --model $YUE2_MODELS_DIR/SheetSage2-fp16 --bits 8|4 --out $YUE2_MODELS_DIR/SheetSage2-q8|q4`
+# (GPU quantization, bit-identical to the profiles' on-the-fly quantization); staged with the same
+# license, card and SHA-256 sidecar.
+# Usage: Scripts/publish-sheetsage2-pack.sh [fp16|q8|q4] [staging dir] [repo id]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 : "${YUE2_MODELS_DIR:?export YUE2_MODELS_DIR first}"
-STAGE="${1:-.local-runs/hf-sheetsage2}"; REPO="${2:-VincentGOURBIN/sheetsage2-mlx-fp16}"
+VARIANT="${1:-fp16}"
+STAGE="${2:-.local-runs/hf-sheetsage2-$VARIANT}"; REPO="${3:-VincentGOURBIN/sheetsage2-mlx-$VARIANT}"
+if [ "$VARIANT" != fp16 ]; then
+  BITS="${VARIANT#q}"; PACK="$YUE2_MODELS_DIR/SheetSage2-$VARIANT"
+  [ -f "$PACK/model.safetensors" ] || { echo "missing $PACK (run yue2 sheetsage2-pack --bits $BITS)"; exit 1; }
+  mkdir -p "$STAGE"
+  cp "$PACK/config.json" "$STAGE/config.json"; ln -sf "$PACK/model.safetensors" "$STAGE/model.safetensors"
+  cp reference/sheetsage2/LICENSE "$STAGE/LICENSE"
+  shasum -a 256 "$PACK/model.safetensors" | awk '{print $1}' > "$STAGE/model.safetensors.sha256"
+  sed "s/{{BITS}}/$BITS/g" > "$STAGE/README.md" <<'CARD'
+---
+license: cc-by-nc-4.0
+base_model:
+- m-a-p/SheetSage2
+- m-a-p/MERT-v2-FullSong
+tags: [mlx, swift, music-transcription, abc-notation, audio, quantized]
+---
+# SheetSage2 for MLX Swift — {{BITS}}-bit prequantized pack
+
+Music recording → editable ABC score, on Apple silicon (Mac, iPhone), with
+[yue2-mlx-swift](https://github.com/VincentGourbin/yue2-mlx-swift) (`SheetSage2Core`, `yue2 transcribe`),
+for the `{{BITS}}bit-fast` / `{{BITS}}bit-lean` transcription profiles.
+
+## Source and changes
+A derivative of **SheetSage2** ([m-a-p/SheetSage2](https://huggingface.co/m-a-p/SheetSage2), revision
+`398b22834dac`) and of its encoder parent **MERT2** ([m-a-p/MERT-v2-FullSong](https://huggingface.co/m-a-p/MERT-v2-FullSong),
+revision `d8ba1c745e73`), both by m-a-p, CC BY-NC 4.0. Changes made here:
+- the LoRA adapters merged into MERT2's attention projections (upstream `merge_lora`, float32);
+- the Conformer encoder's linear layers quantized to {{BITS}} bits (MLX affine, group size 64); the decoder in
+  float16; the mel front-end buffers, the ConvNeXt front and the layer-mix logits in float32;
+- stored in MLX layout (`weights_format: mlx-quantized`), SHA-256 in `model.safetensors.sha256`.
+No retraining. The weights are not endorsed by m-a-p. Quantization changes some scores against the
+float16 model (rubato orchestral material especially); see the repository's `docs/References.md`.
+
+## Use
+```bash
+yue2 download --model sheetsage2-q{{BITS}}
+yue2 transcribe --audio song.m4a --profile {{BITS}}bit-lean --out run/score
+```
+The pack is bit-identical to what the `{{BITS}}bit-*` profiles build by quantizing the float16 model at
+load, without the cost: it loads directly at its own size.
+
+## License
+CC BY-NC 4.0 (see `LICENSE`, copied from the upstream release): non-commercial use only, with
+attribution to MERT2 and SheetSage2 (m-a-p) and their repositories above.
+CARD
+  du -hL "$STAGE/model.safetensors" | cut -f1; cat "$STAGE/model.safetensors.sha256"
+  echo "  hf repos create $REPO --type model && hf upload $REPO $STAGE ."
+  exit 0
+fi
 SRC="$YUE2_MODELS_DIR/SheetSage2-merged"
 [ -f "$SRC/model.safetensors" ] || { echo "missing $SRC (run sheetsage2_fixtures.py convert)"; exit 1; }
 mkdir -p "$STAGE"

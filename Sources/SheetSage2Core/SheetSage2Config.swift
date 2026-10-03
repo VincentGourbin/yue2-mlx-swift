@@ -61,6 +61,18 @@ public struct SheetSage2Config: Codable, Sendable {
     public var tokenizerFingerprint: String?
     public var loraAlpha: Double?
     public var loraRank: Int?
+    /// Set on a prequantized pack (`weights_format: mlx-quantized`): affine quantization of the
+    /// Conformer's linear layers, stored in MLX layout (`SheetSage2Pack`).
+    public var quantization: Quantization?
+
+    public struct Quantization: Codable, Sendable, Equatable {
+        public var bits: Int
+        public var groupSize: Int
+        enum CodingKeys: String, CodingKey {
+            case bits
+            case groupSize = "group_size"
+        }
+    }
 
     enum CodingKeys: String, CodingKey {
         case backbone = "backbone_config"
@@ -78,6 +90,7 @@ public struct SheetSage2Config: Codable, Sendable {
         case tokenizerFingerprint = "tokenizer_fingerprint"
         case loraAlpha = "lora_alpha"
         case loraRank = "lora_rank"
+        case quantization
     }
 
     /// Samples in one model window (300 s × 24 kHz on the released checkpoint), rounded up to the

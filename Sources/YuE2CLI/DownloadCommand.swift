@@ -15,7 +15,7 @@ struct DownloadCommand: AsyncParsableCommand {
     @Option(name: .long, help: "Directory to download checkpoints into (defaults to $YUE2_MODELS_DIR).")
     var modelsDir: String?
 
-    @Option(name: .long, help: "Comma-separated targets: lm, vae, vae-legacy, sheetsage2-fp16 (transcription, the merged fp16 pack, 1.4 GB), sheetsage2 (the upstream release + its MERT-v2 parent, merged at load), packs (all three prequantized packs), or a pack name (int4-mixed-head, qint8-all-head, int4-head).")
+    @Option(name: .long, help: "Comma-separated targets: lm, vae, vae-legacy, sheetsage2-fp16 / sheetsage2-q8 / sheetsage2-q4 (transcription packs for the 16/8/4-bit profiles), sheetsage2 (the upstream release + its MERT-v2 parent, merged at load), packs (all three prequantized packs), or a pack name (int4-mixed-head, qint8-all-head, int4-head).")
     var model: String = "lm,vae"
 
     func run() async throws {
@@ -54,6 +54,8 @@ struct DownloadCommand: AsyncParsableCommand {
             case "vae-legacy": targets.append(.model(.vaeLegacy))
             case "sheetsage2": targets.append(contentsOf: [.model(.sheetsage2), .model(.mert2FullSong)])
             case "sheetsage2-fp16": targets.append(.model(.sheetsage2FP16))
+            case "sheetsage2-q8": targets.append(.model(.sheetsage2Q8))
+            case "sheetsage2-q4": targets.append(.model(.sheetsage2Q4))
             case "packs": targets.append(contentsOf: YuE2Pack.allCases.map(Target.pack))
             case let name:
                 guard let pack = YuE2Pack(rawValue: name) else {
