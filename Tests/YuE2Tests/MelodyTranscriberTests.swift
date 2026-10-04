@@ -63,4 +63,30 @@ struct MelodyTranscriberTests {
         #expect(t.key == "F#", "\(t.key)")
         #expect(!t.abc.contains("^"), "a melody inside its own key signature needs no explicit sharps: \(t.abc)")
     }
+
+    /// ASK Q9: a quiet phone take (frame RMS ≈ 0.009, below the former absolute 0.01 gate) keeps every note.
+    @Test func quietTakeIsNotCutByTheSilenceGate() {
+        let sr = 48_000.0
+        var samples: [Float] = []
+        for m in [60, 64, 65, 64, 69] { samples += tone(midi: m, seconds: 0.44, sampleRate: sr) + [Float](repeating: 0, count: 2_880) }
+        let quiet = samples.map { $0 * 0.03 }  // RMS ≈ 0.009 on the voiced frames, under the former 0.01 gate
+        var options = MelodyTranscriber.Options()
+        options.bpm = 120
+        let t = MelodyTranscriber.transcribe(samples: quiet, sampleRate: sr, options: options)
+        #expect(t.notes.map(\.midi) == [60, 64, 65, 64, 69], "\(t.notes)")
+        options.minimumRMS = 0.01  // the former absolute gate cuts the same take
+        #expect(MelodyTranscriber.transcribe(samples: quiet, sampleRate: sr, options: options).notes.count < 5)
+    }
+
+    /// ASK Q9: tracker octave errors on a low voice (F2 C3 C3 A2 F3 …) are folded back.
+    @Test func octaveErrorsAreFoldedByMelodicContinuity() {
+        let s = { (m: Int, i: Int) in MelodyTranscriber.Segment(midi: m, start: Double(i) * 0.5, end: Double(i) * 0.5 + 0.4) }
+        let tracked = [53, 60, 60, 57, 65, 57, 69, 60].enumerated().map { s($0.element, $0.offset) }
+        let folded = MelodyTranscriber.foldOctaveJumps(tracked, leapLimit: 8)
+        // A3 (69) after A2 is the octave error; F3 (65) is a plausible fourth and stays.
+        #expect(folded.map(\.midi) == [53, 60, 60, 57, 65, 57, 57, 60], "\(folded.map(\.midi))")
+        // A melody without jumps is left alone.
+        let smooth = [60, 62, 64, 65, 67, 65, 64, 62].enumerated().map { s($0.element, $0.offset) }
+        #expect(MelodyTranscriber.foldOctaveJumps(smooth, leapLimit: 8).map(\.midi) == smooth.map(\.midi))
+    }
 }

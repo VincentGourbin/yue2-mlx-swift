@@ -50,6 +50,7 @@ The request file: `style`, `lyrics` (`[Verse]`, `[Chorus]`, `[Bridge]`, `[Outro]
 | `--temperature`, `--top-p`, `--top-k` | checkpoint config | sampling for both phases |
 | `--style`, `--lyrics`, `--cot`, `--seed`, `--abc-file`, `--cfg-scale`, `--id` | — | override the request |
 | `--abc-prefix-file` | — | beginning of a score (header with key and tempo, first sections) the planner continues from; overrides the request's `abc_prefix` |
+| `--follow-style-key` | off | the key and tempo the style states ("key of D major", "A minor", "120 BPM") become a forced score header (`SongRequest.followingStyleKey()`); without it they are hints the planner often departs from (1 song in 7 kept the style's key in the app's sample). Not validated by ear yet |
 | `--vae` | `standard` | `legacy` for the older VAE |
 | `--format` | `int16` | `float32` |
 | `--profile` | off | per-phase report, TTS metrics, `trace.json` in `--out` |

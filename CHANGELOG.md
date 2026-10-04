@@ -2,6 +2,12 @@
 
 Published versions are squashed commits on `main` (the working history stays local); each version has a tag and a GitHub release.
 
+## 1.8.0 — 2026-10-04
+
+- **Resume an edited NAR solve (ASK Q8)**: `Synthesizer.synthesize(edit:resume:)` now accepts both — the `.keep` mask ("redo from here") is rebuilt from the seed's noise and the kept latents and re-imposed from the resumed step, `.variation`'s start state is superseded by the checkpoint; bit-identical to the uninterrupted edited solve (tested for both edits). An interrupted "redo from here" no longer restarts its stage.
+- **Quiet hums (ASK Q9)**: `MelodyTranscriber`'s silence gate is relative to the take (`min(0.01, 0.1 × p90 frame RMS)`; `Options.minimumRMS` forces an absolute one), so a −38 dBFS phone take keeps its notes; tracker octave errors are folded by melodic continuity (`Options.octaveContinuity`, leaps over 8 semitones from the last notes' median).
+- **Follow the style's key and tempo (ASK Q12)**: `generate|plan --follow-style-key` / `SongRequest.followingStyleKey()` turns "key of D major", "A minor", "120 BPM" in the style into a forced score header (`StyleKey`); the planner otherwise treats them as hints. Opt-in, checked for coherence, not yet by ear.
+
 ## 1.7.1 — 2026-10-04
 
 - **Fix (ASK Q11): transcription no longer crashes an iOS app sent to the background.** `SheetSage2Transcriber.checkpoint` is called before every unit of GPU work — the STFT or each of its chunks, each ConvNeXt block or chunk, each Conformer block, the projection, each decoding step — so an app waits on `YuE2GPUGate` there (nothing is submitted between two calls) and throws to cancel; a cancelled `Task` stops at the same points (`CancellationError`). It receives `SheetSage2Progress` (stage, window, encoder fraction, tokens, `overallFraction`), which gives the app an encoder progress bar. `SheetSage2Model.encode(_:checkpoint:)` and `SheetSage2Generator.generate(…checkpoint:)` expose the same hook. Pausing changes no result (tested).

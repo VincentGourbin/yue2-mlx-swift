@@ -46,6 +46,17 @@ public enum MelodyTranscriber {
         /// Octaves added to every note (negative = down). `nil` brings the melody's median into
         /// the singing range (A3-E5) by whole octaves — a whistle sits two octaves above a voice.
         public var octaveShift: Int? = nil
+        /// Absolute RMS under which a 40 ms frame counts as silence. `nil` (default) sizes it from
+        /// the take: `min(0.01, relativeRMS × the 90th percentile of the frame RMS)`, so a quiet
+        /// phone-microphone take (≈ −38 dBFS) is not cut while a loud one keeps the 0.01 floor
+        /// (ASK Q9). Noise above the gate is still rejected by YIN's aperiodicity threshold.
+        public var minimumRMS: Float? = nil
+        public var relativeRMS: Float = 0.1
+        /// Bring a note back by whole octaves when it leaps more than `octaveLeapLimit`
+        /// semitones from the melody so far — the pitch tracker's octave errors on low voices,
+        /// not real leaps (ASK Q9).
+        public var octaveContinuity = true
+        public var octaveLeapLimit = 8
         public init() {}
     }
 
@@ -56,7 +67,8 @@ public enum MelodyTranscriber {
     }
 
     public static func transcribe(samples: [Float], sampleRate: Double, options: Options = Options()) -> MelodyTranscription {
-        let f0 = pitchTrack(samples: samples, sampleRate: sampleRate, minHz: options.minHz, maxHz: options.maxHz)
+        let gate = options.minimumRMS ?? voicingGate(samples: samples, sampleRate: sampleRate, relative: options.relativeRMS)
+        let f0 = pitchTrack(samples: samples, sampleRate: sampleRate, minHz: options.minHz, maxHz: options.maxHz, rmsGate: gate)
         let hopSeconds = Double(hop(for: sampleRate)) / sampleRate
         let voiced = f0.filter { $0 > 0 }.count
         let voicedRatio = f0.isEmpty ? 0 : Double(voiced) / Double(f0.count)
@@ -76,6 +88,7 @@ public enum MelodyTranscriber {
             shift = 0
         }
         if shift != 0 { segments = segments.map { Segment(midi: $0.midi + 12 * shift, start: $0.start, end: $0.end) } }
+        if options.octaveContinuity { segments = foldOctaveJumps(segments, leapLimit: options.octaveLeapLimit) }
         let notes = quantize(segments: segments, bpm: options.bpm)
         let key = estimateKey(notes: notes)
         let abc = render(notes: notes, key: key, bpm: options.bpm, section: options.section)
@@ -86,8 +99,27 @@ public enum MelodyTranscriber {
 
     static func hop(for sampleRate: Double) -> Int { max(1, Int(sampleRate / 100)) }  // 10 ms
 
-    /// One f0 (Hz) per hop, 0 for unvoiced frames.
-    static func pitchTrack(samples: [Float], sampleRate: Double, minHz: Double, maxHz: Double) -> [Float] {
+    /// Silence gate sized from the take: `min(0.01, relative × p90(frame RMS))`, never below 1e-4.
+    static func voicingGate(samples: [Float], sampleRate: Double, relative: Float) -> Float {
+        let window = max(1024, Int(sampleRate * 0.04))
+        let hop = hop(for: sampleRate)
+        guard samples.count >= window else { return 0.01 }
+        var levels = [Float]()
+        var start = 0
+        samples.withUnsafeBufferPointer { p in
+            while start + window <= samples.count {
+                var rms: Float = 0
+                vDSP_rmsqv(p.baseAddress! + start, 1, &rms, vDSP_Length(window))
+                levels.append(rms)
+                start += hop
+            }
+        }
+        let p90 = levels.sorted()[min(levels.count - 1, Int(Double(levels.count) * 0.9))]
+        return max(1e-4, min(0.01, relative * p90))
+    }
+
+    /// One f0 (Hz) per hop, 0 for unvoiced frames (frame RMS under `rmsGate`).
+    static func pitchTrack(samples: [Float], sampleRate: Double, minHz: Double, maxHz: Double, rmsGate: Float = 0.01) -> [Float] {
         let window = max(1024, Int(sampleRate * 0.04))  // 40 ms
         let hop = hop(for: sampleRate)
         let tauMin = max(2, Int(sampleRate / maxHz))
@@ -104,7 +136,7 @@ public enum MelodyTranscriber {
             for i in 0..<(window + tauMax) { frame[i] = samples[start + i] }
             var rms: Float = 0
             vDSP_rmsqv(frame, 1, &rms, vDSP_Length(window))
-            if rms < 0.01 {
+            if rms < rmsGate {
                 track.append(0); start += hop; continue
             }
             // Difference function d(τ) = Σ (x[i] − x[i+τ])² = E(0) + E(τ) − 2·x·x_τ, the energies
@@ -170,6 +202,26 @@ public enum MelodyTranscriber {
             } else {
                 out[i] = voiced.count > radius ? voiced.sorted()[voiced.count / 2] : values[i]
             }
+        }
+        return out
+    }
+
+    /// Octave errors of the tracker: a note more than `leapLimit` semitones from the median of the
+    /// last five notes is moved by whole octaves to the closest position (the first note is judged
+    /// against the next ones instead).
+    static func foldOctaveJumps(_ input: [Segment], leapLimit: Int) -> [Segment] {
+        guard input.count >= 2 else { return input }
+        var out = [Segment]()
+        for (i, s) in input.enumerated() {
+            let context = out.isEmpty ? Array(input[(i + 1)..<min(input.count, i + 6)]) : Array(out.suffix(5))
+            guard !context.isEmpty else { out.append(s); continue }
+            let reference = context.map(\.midi).sorted()[context.count / 2]
+            var midi = s.midi
+            if abs(midi - reference) > leapLimit {
+                let candidates = [midi - 24, midi - 12, midi, midi + 12, midi + 24]
+                midi = candidates.min { abs($0 - reference) < abs($1 - reference) }!
+            }
+            out.append(Segment(midi: midi, start: s.start, end: s.end))
         }
         return out
     }

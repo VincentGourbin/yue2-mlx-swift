@@ -36,7 +36,11 @@ public struct Synthesizer {
     /// every completed ODE step with the live state (192 KB at 1 500 frames — persist it, never
     /// accumulate it); `resume` restarts the same schedule from a saved step, bit-for-bit the
     /// trajectory an uninterrupted solve would have taken, so a lost step costs one step, not the
-    /// stage. `onBeforeChunk(needsARPath:)` fires once per chunk,
+    /// stage. `edit` and `resume` combine (ASK Q8): the edit is rebuilt from its own inputs (the
+    /// `.keep` mask from the seed's noise and the kept latents, re-imposed from the resumed step
+    /// on; `.variation`'s start state is superseded by the checkpoint, which must come after its
+    /// start step), the checkpoint brings the state and the step — bit-identical to the
+    /// uninterrupted edited solve. `onBeforeChunk(needsARPath:)` fires once per chunk,
     /// after its AR-prefix cache is settled and before its solve starts: `needsARPath == false`
     /// means the AR branch's weights are never read again in this solve (single chunk, reused
     /// cache) — the point where stage-scoped residency drops them (`ModelSession.releaseWeights
@@ -64,7 +68,6 @@ public struct Synthesizer {
             guard chunks.count == 1 else {
                 throw YuE2Error.invalidRequest("NAR edits are only supported for single-chunk songs (got \(chunks.count) chunks)")
             }
-            guard resume == nil else { throw YuE2Error.invalidRequest("NAR edit and resume cannot be combined") }
             let latents: MLXArray
             switch edit {
             case .variation(let l, let strength):
@@ -127,6 +130,15 @@ public struct Synthesizer {
                 keep = (frames, latents)
             case nil:
                 break
+            }
+            if let resume, edit != nil {
+                // The checkpoint was taken inside this edited solve: its state already carries the
+                // edit's start, so it supersedes the variation's start state.
+                guard resume.step >= startStep else {
+                    throw YuE2Error.invalidRequest("NAR checkpoint (step \(resume.step)) predates this edit's first step (\(startStep))")
+                }
+                initialState = resume.state
+                startStep = resume.step
             }
             if startStep >= resolvedSteps, let initialState {
                 // strength 0: nothing to solve, the source is the result.

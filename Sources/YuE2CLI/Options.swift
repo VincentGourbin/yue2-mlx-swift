@@ -61,6 +61,9 @@ struct RequestOptions: ParsableArguments {
     @Option(name: .long, help: "Path to a beginning of ABC score the planner continues from — header with key and tempo, first sections (overrides --request's abc_prefix).")
     var abcPrefixFile: String?
 
+    @Flag(name: .long, help: "Force the score header to the key and tempo the style states (\"key of D major\", \"120 BPM\"): the planner otherwise treats them as hints (ASK Q12). Ignored when a score or a prefix is imposed.")
+    var followStyleKey = false
+
     @Option(name: .long, help: "Classifier-free guidance scale, in [0, 20] (overrides --request's cfg_scale).")
     var cfgScale: Double?
 
@@ -102,9 +105,10 @@ struct RequestOptions: ParsableArguments {
         guard let cotMode = CoTMode(rawValue: cotRaw ?? CoTMode.full.rawValue) else {
             throw YuE2Error.invalidRequest("cot must be off, melody or full")
         }
-        return try SongRequest(
+        let request = try SongRequest(
             style: style, lyrics: lyrics, cot: cotMode, seed: seed ?? 831_001,
             abc: abc, abcPrefix: abcPrefix, cfgScale: cfgScale, id: id ?? "song")
+        return followStyleKey ? request.followingStyleKey() : request
     }
 }
 

@@ -95,6 +95,55 @@ struct GPUGateAndCheckpointTests {
         #expect(try NARCheckpoint.load(from: dir) == nil)
     }
 
+    /// ASK Q8: an edited solve (`.keep` = "redo from here", `.variation`) interrupted after a
+    /// checkpoint resumes bit-for-bit with `edit:` and `resume:` together.
+    @Test(arguments: ["keep", "variation"]) func editedSolveResumesBitExact(kind: String) throws {
+        let raw = try loadArrays(url: tinyLMFixture)
+        let model = try loadedTinyModel()
+        let noise = try #require(raw["nar_noise"])
+        let synthesizer = Synthesizer(model: model, config: try GenerationConfig(odeSteps: 6))
+        let prefix = [2, 3]
+        let codec = (0..<noise.dim(0)).map { $0 % 4 }
+        let source = try synthesizer.synthesize(prefix: prefix, codec: codec, seed: 7, noise: noise)
+        let edit: NAREdit = kind == "keep"
+            ? .keep(latents: source, frames: noise.dim(0) / 2)
+            : .variation(latents: source, strength: 0.5)
+        let full = try synthesizer.synthesize(prefix: prefix, codec: codec, seed: 9, noise: noise, edit: edit)
+
+        var saved: NARCheckpoint?
+        #expect(throws: YuE2Error.self) {
+            try synthesizer.synthesize(
+                prefix: prefix, codec: codec, seed: 9, noise: noise,
+                onStep: { if $0.step == 4 { saved = $0 } }, edit: edit, cancel: { saved != nil })
+        }
+        let checkpoint = try #require(saved)
+        var resumedSteps: [Int] = []
+        let resumed = try synthesizer.synthesize(
+            prefix: prefix, codec: codec, seed: 9, noise: noise,
+            resume: checkpoint, onStep: { resumedSteps.append($0.step) }, edit: edit)
+        #expect(resumedSteps == [5, 6])
+        #expect(maxAbsDiff(full, resumed) == 0, "\(kind)")
+        if kind == "keep" {
+            // The kept frames come back exactly, as in an uninterrupted "redo from here".
+            let kept = noise.dim(0) / 2
+            #expect(maxAbsDiff(resumed[0..<kept], source[0..<kept].asType(resumed.dtype)) == 0)
+        }
+    }
+
+    @Test func editRejectsACheckpointBeforeItsFirstStep() throws {
+        let raw = try loadArrays(url: tinyLMFixture)
+        let model = try loadedTinyModel()
+        let noise = try #require(raw["nar_noise"])
+        let synthesizer = Synthesizer(model: model, config: try GenerationConfig(odeSteps: 6))
+        let codec = (0..<noise.dim(0)).map { $0 % 4 }
+        let early = NARCheckpoint(chunkIndex: 0, step: 1, steps: 6, state: noise)
+        #expect(throws: YuE2Error.self) {
+            try synthesizer.synthesize(
+                prefix: [2, 3], codec: codec, seed: 9, noise: noise, resume: early,
+                edit: .variation(latents: noise, strength: 0.5))  // starts at step 3
+        }
+    }
+
     @Test func resumeRejectsAMismatchedCheckpoint() throws {
         let raw = try loadArrays(url: tinyLMFixture)
         let model = try loadedTinyModel()
