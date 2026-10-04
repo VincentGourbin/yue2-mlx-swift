@@ -113,6 +113,12 @@ result.abc               // String? — nil when the events do not make a score 
 result.events            // [SheetSage2Event]: time, beat/meter, key, chord, structure, melody notes
 result.tokens            // [[Int]], one greedy sequence per 300 s window
 
+// iOS: pause in the background, cancel, progress (called before every unit of GPU work)
+var gated = SheetSage2Transcriber(model: model, profile: .named("16bit-lean")!)
+gated.checkpoint = { progress in            // SheetSage2Progress: stage, window/windows, encoderFraction, tokens, overallFraction
+    guard YuE2GPUGate.shared.wait(cancel: { cancelled }) else { throw CancellationError() }
+}
+
 var request = SongRequest(style: style, lyrics: lyrics)
 request.abc = result.abc                       // or request.abcPrefix: the planner continues it
 request.cot = .melody

@@ -2,6 +2,10 @@
 
 Published versions are squashed commits on `main` (the working history stays local); each version has a tag and a GitHub release.
 
+## 1.7.1 — 2026-10-04
+
+- **Fix (ASK Q11): transcription no longer crashes an iOS app sent to the background.** `SheetSage2Transcriber.checkpoint` is called before every unit of GPU work — the STFT or each of its chunks, each ConvNeXt block or chunk, each Conformer block, the projection, each decoding step — so an app waits on `YuE2GPUGate` there (nothing is submitted between two calls) and throws to cancel; a cancelled `Task` stops at the same points (`CancellationError`). It receives `SheetSage2Progress` (stage, window, encoder fraction, tokens, `overallFraction`), which gives the app an encoder progress bar. `SheetSage2Model.encode(_:checkpoint:)` and `SheetSage2Generator.generate(…checkpoint:)` expose the same hook. Pausing changes no result (tested).
+
 ## 1.7.0 — 2026-10-03
 
 - **Prequantized SheetSage2 packs** for the 8/4-bit transcription profiles (ASK Q10 from the app): [`VincentGOURBIN/sheetsage2-mlx-q8`](https://huggingface.co/VincentGOURBIN/sheetsage2-mlx-q8) (0.9 GB) and [`sheetsage2-mlx-q4`](https://huggingface.co/VincentGOURBIN/sheetsage2-mlx-q4) (0.6 GB), CC-BY-NC-4.0 derivatives; `yue2 download --model sheetsage2-q8,sheetsage2-q4`, `YuE2Model.sheetsage2Q8/.sheetsage2Q4`. `SheetSage2Model.load(directory:profile:)` loads a pack (`weights_format: mlx-quantized`) without requantizing: 0.16-0.19 s and 0.6-0.9 GB instead of 0.33 s and 1.6-1.9 GB; transcription peaks `8bit-lean` 1.7 GB, `4bit-lean` 1.4 GB. The packs are bit-identical to the profiles' on-the-fly (GPU) quantization.

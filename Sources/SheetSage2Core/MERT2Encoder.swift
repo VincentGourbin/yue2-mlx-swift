@@ -47,7 +47,9 @@ final class ConvNextLayer: Module {
         super.init()
     }
 
-    func callAsFunction(_ x: MLXArray, chunkFrames: Int? = nil) -> MLXArray {
+    func callAsFunction(
+        _ x: MLXArray, chunkFrames: Int? = nil, checkpoint: (() throws -> Void)? = nil
+    ) throws -> MLXArray {
         guard let chunkFrames, chunkFrames < x.dim(1) else {
             return x + project(grn(gelu(expand(norm(depthwise(x))))))
         }
@@ -60,13 +62,15 @@ final class ConvNextLayer: Module {
         func expanded(_ r: Range<Int>) -> MLXArray { gelu(expand(norm(mixed[0..., r, 0...]))) }
         var sumOfSquares = MLXArray.zeros([1, 1, grn.weight.dim(-1)], dtype: .float32)
         for r in ranges {
+            try checkpoint?()
             let e = expanded(r).asType(.float32)
             sumOfSquares = sumOfSquares + MLX.sum(e * e, axis: 1, keepDims: true)
             eval(sumOfSquares)
         }
         let magnitude = MLX.sqrt(sumOfSquares)
         let normalized = (magnitude / (MLX.mean(magnitude, axis: -1, keepDims: true) + 1e-6)).asType(x.dtype)
-        return concatenated(ranges.map { r in
+        return concatenated(try ranges.map { r in
+            try checkpoint?()
             let e = expanded(r)
             let y = x[0..., r, 0...] + project(grn.weight * (e * normalized) + grn.bias + e)
             eval(y)
@@ -91,13 +95,15 @@ final class ConvNextBlock: Module {
         super.init()
     }
 
-    func callAsFunction(_ x: MLXArray, chunkFrames: Int? = nil) -> MLXArray {
+    func callAsFunction(
+        _ x: MLXArray, chunkFrames: Int? = nil, checkpoint: (() throws -> Void)? = nil
+    ) throws -> MLXArray {
         var h = x
         if let resampleNorm, let resampleConv {
             h = resampleConv(resampleNorm(h))
         }
         for layer in layers {
-            h = layer(h, chunkFrames: chunkFrames)
+            h = try layer(h, chunkFrames: chunkFrames, checkpoint: checkpoint)
             if chunkFrames != nil { eval(h) }
         }
         return h

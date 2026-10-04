@@ -69,6 +69,15 @@ Ported and validated on the Mac (v1.5.0); not yet run on a device. What an app n
 - Mac footprint (`16bit-fast`): 1.6 GB once loaded, 3.3 GB peak on one 300 s window, 3.5 GB on a 500 s song; the transient comes from the fixed 300 s window (STFT, ConvNeXt at 15 000 frames in fp32). Run it as its own stage, release it before YuE2 loads. Room left: chunked STFT, int8 MERT weights (0.7 GB instead of 1.3), an encoder in Core AI (static 300 s shape).
 - Mac time: 2.4-3.0 s for a 13-30 s excerpt, 21 s for 500 s. Expect 4-6× on the A17 Pro for the encoder, ≈ 3× for the decoding loop (`docs/knowledge/benchmarks/sheetsage2-port-estimate-2026-10-03.md`), so ≈ 15-30 s for an excerpt; the 60 s thermal limit applies to long songs.
 - Input: 24 kHz mono float32 (`AudioImporter.loadAudio(url:sampleRate: 24_000)` then the channel mean); the 300 s window is padded internally, do not trim it (a shorter window changes the transcription).
+- **Background (ASK Q11)**: pass the GPU gate as the transcriber's checkpoint, called before every unit of GPU work (STFT or chunk, ConvNeXt block or chunk, each Conformer block, the projection, each decoding step); nothing is submitted between two calls:
+  ```swift
+  var transcriber = SheetSage2Transcriber(model: model, profile: .named("16bit-lean")!)
+  transcriber.checkpoint = { progress in
+      guard YuE2GPUGate.shared.wait(cancel: { userCancelled }) else { throw CancellationError() }
+      Task { @MainActor in bar.progress = progress.overallFraction }   // encoding: progress.encoderFraction per window
+  }
+  ```
+  A cancelled `Task` also stops it at the next unit (`CancellationError`). Units are shortest in the `lean` profiles (chunks of 2 048 frames); an eval already in flight when iOS withdraws the GPU still aborts (Q7: only the mlx fork closes that window).
 - The simulator compiles `SheetSage2Core` but cannot run MLX: test the UI there, the transcription on the device.
 
 ## Core AI

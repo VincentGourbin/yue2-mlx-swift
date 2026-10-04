@@ -53,12 +53,23 @@ public final class SheetSage2Model: Module {
     }
 
     /// Encoder memory `[1, frames, hidden]` for one window, plus every intermediate tensor.
-    public func encodeWithTaps(_ waveform: MLXArray, tapLayers: Set<Int> = []) throws -> SheetSage2EncoderTaps {
+    ///
+    /// `checkpoint` runs before every evaluated unit (the STFT or each of its chunks, each ConvNeXt
+    /// block or chunk, each Conformer block, the projection) with the fraction of the window already
+    /// encoded; nothing is submitted to the GPU between two calls. Throw from it to stop.
+    public func encodeWithTaps(
+        _ waveform: MLXArray, tapLayers: Set<Int> = [], checkpoint: ((Double) throws -> Void)? = nil
+    ) throws -> SheetSage2EncoderTaps {
         guard encoderResident else {
             throw SheetSage2Error.weightMismatch("the encoder was released (releaseEncoder); load the model again to encode")
         }
+        // Units: STFT, three ConvNeXt blocks, the Conformer blocks, the projection.
+        let units = Double(1 + encoder.subsampling.count + encoder.layers.count + 1)
+        var done = 0.0
+        let check: () throws -> Void = { try checkpoint?(done / units) }
         let padded = try padToWindow(waveform)
-        let mel = encoder.featureExtractor(padded, chunkFrames: chunkFrames)
+        let mel = try encoder.featureExtractor(padded, chunkFrames: chunkFrames, checkpoint: check)
+        done += 1
         // Evaluate stage by stage: one lazy graph over the whole 300 s window keeps every stage's
         // transients alive at once (8 GB peak measured, 2.95 GB evaluated per stage, fp16).
         eval(mel)
@@ -71,8 +82,10 @@ public final class SheetSage2Model: Module {
         var hidden = mel.asType(convDType)[.newAxis]
         var subsampling = [MLXArray]()
         for block in encoder.subsampling {
-            hidden = block(hidden, chunkFrames: chunkFrames)
+            try check()
+            hidden = try block(hidden, chunkFrames: chunkFrames, checkpoint: check)
             eval(hidden)
+            done += 1
             subsampling.append(hidden)
         }
         hidden = hidden.asType(stackDType)
@@ -80,19 +93,22 @@ public final class SheetSage2Model: Module {
         var mixed = hidden.asType(mixDType) * weights[0]
         var layers = [Int: MLXArray]()
         for (i, layer) in encoder.layers.enumerated() {
+            try check()
             hidden = layer(hidden)
+            done += 1
             mixed = mixed + hidden.asType(mixDType) * weights[i + 1]
             eval(hidden, mixed)
             if tapLayers.contains(i) { layers[i] = hidden }
         }
+        try check()
         let memory = encoderProjection(mixed)
         eval(memory)
         return SheetSage2EncoderTaps(mel: mel, subsampling: subsampling, layers: layers, mixed: mixed, memory: memory)
     }
 
     /// Encoder memory `[1, frames, hidden]` for one window.
-    public func encode(_ waveform: MLXArray) throws -> MLXArray {
-        try encodeWithTaps(waveform).memory
+    public func encode(_ waveform: MLXArray, checkpoint: ((Double) throws -> Void)? = nil) throws -> MLXArray {
+        try encodeWithTaps(waveform, checkpoint: checkpoint).memory
     }
 
     /// Drops the encoder's weights (≈ 1.2 GB in float16) once every window is encoded: the

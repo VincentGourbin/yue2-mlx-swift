@@ -124,7 +124,7 @@ public struct SheetSage2Generator {
     public mutating func generate(
         memory: MLXArray, prompts: [String] = SheetSage2Tokenizer.fullTaskPrompts,
         prefixTokens: [Int]? = nil, stopTimeSeconds: Double?, maxSequenceLength: Int? = nil,
-        onToken: ((Int) -> Void)? = nil
+        onToken: ((Int) -> Void)? = nil, checkpoint: ((Int) throws -> Void)? = nil
     ) throws -> [Int] {
         var prefix = prefixTokens ?? tokenizer.promptPrefix(prompts)
         guard prefix.first == tokenizer.sosToken else {
@@ -142,6 +142,8 @@ public struct SheetSage2Generator {
         let cache = model.makeCache()
         var input = MLXArray(prefix.map(Int32.init))[.newAxis]
         while tokens.count < limit {
+            // Before every step: nothing reaches the GPU while the host keeps the checkpoint closed.
+            try checkpoint?(tokens.count)
             let logits = model.decode(input, memory: memory, cache: cache)[0, -1].asType(.float32)
             let allowed = mask(for: state.maskKey)
             let next = argMax(logits + allowed).item(Int.self)

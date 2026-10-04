@@ -14,6 +14,29 @@ struct TranscriptionWindow {
     var generationStop: Double?
 }
 
+/// Where a transcription is, passed to `SheetSage2Transcriber.checkpoint` before every unit of GPU
+/// work.
+public struct SheetSage2Progress: Sendable, Equatable {
+    public enum Stage: String, Sendable { case encoding, decoding }
+    public var stage: Stage
+    /// 0-based window index and window count (one window per 300 s, overlapping).
+    public var window: Int
+    public var windows: Int
+    /// Encoding: fraction of this window's encoder already evaluated, in [0, 1).
+    public var encoderFraction: Double
+    /// Decoding: tokens of this window so far (prefix included).
+    public var tokens: Int
+    /// Rough whole-run fraction for a progress bar: encoding counts for a quarter, decoding for the
+    /// rest (its length is not known in advance, so a window's decoding is credited once done).
+    public var overallFraction: Double {
+        let w = Double(max(windows, 1))
+        switch stage {
+        case .encoding: return 0.25 * (Double(window) + encoderFraction) / w
+        case .decoding: return 0.25 + 0.75 * Double(window) / w
+        }
+    }
+}
+
 /// Transcription result: ABC (or why it could not be built), timed events, raw tokens per window.
 public struct SheetSage2Transcription: Sendable {
     public var abc: String?
@@ -34,6 +57,12 @@ public struct SheetSage2Transcriber {
     /// Release the encoder's weights once every window is encoded (lean profiles). The model
     /// must then be loaded again before another transcription.
     public var releaseEncoderAfterEncoding = false
+    /// Called before every unit of GPU work (an encoder stage or chunk, a decoding step): nothing is
+    /// submitted to the GPU between two calls. Block in it to pause — an iOS app waits on its GPU
+    /// gate here while it is not in the foreground — and throw from it to cancel; the error is
+    /// rethrown by `transcribe`. A cancelled `Task` is also checked at the same points
+    /// (`CancellationError`).
+    public var checkpoint: ((SheetSage2Progress) throws -> Void)?
 
     public init(model: SheetSage2Model) {
         self.model = model
@@ -71,11 +100,18 @@ public struct SheetSage2Transcriber {
         let plan = Self.windowPlan(duration: duration, window: windowLength, overlap: overlapSeconds, lookahead: lookaheadSeconds)
         // Every window is encoded before any decoding (windows only depend on the audio), so the
         // encoder can be released before the decoding loop.
+        let hook = checkpoint
+        func check(_ progress: SheetSage2Progress) throws {
+            if Task.isCancelled { throw CancellationError() }
+            try hook?(progress)
+        }
         var memories = [MLXArray]()
-        for window in plan {
+        for (index, window) in plan.enumerated() {
             let offset = Int((window.start * rate).rounded())
             let count = Int((windowLength * rate).rounded())
-            memories.append(try model.encode(waveform[offset ..< min(samples, offset + count)]))
+            memories.append(try model.encode(waveform[offset ..< min(samples, offset + count)]) { fraction in
+                try check(SheetSage2Progress(stage: .encoding, window: index, windows: plan.count, encoderFraction: fraction, tokens: 0))
+            })
             Memory.clearCache()
         }
         if releaseEncoderAfterEncoding { model.releaseEncoder() }
@@ -98,7 +134,10 @@ public struct SheetSage2Transcriber {
             let stop = window.generationStop ?? min(duration - window.start, windowLength)
             let tokens = try generator.generate(
                 memory: memory, prompts: prompts, prefixTokens: prefix, stopTimeSeconds: stop,
-                onToken: { onToken?(index, $0) })
+                onToken: { onToken?(index, $0) },
+                checkpoint: { tokens in
+                    try check(SheetSage2Progress(stage: .decoding, window: index, windows: plan.count, encoderFraction: 1, tokens: tokens))
+                })
             if tokens.count > model.config.maxOutputSeqLen {
                 warnings.append("Window \(index + 1) reached the token limit; inspect its token coverage")
             }

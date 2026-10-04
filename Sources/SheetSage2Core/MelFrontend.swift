@@ -31,7 +31,9 @@ final class MelFrontend: Module {
     /// `waveform` `[samples]` float32 → `[frames − 1, nMels]` normalized log-mel; with
     /// `chunkFrames`, the STFT runs by chunks of frames (each evaluated) instead of materializing
     /// the whole window's spectrum (≈ 0.5 GB for 300 s).
-    func callAsFunction(_ waveform: MLXArray, chunkFrames: Int? = nil) -> MLXArray {
+    func callAsFunction(
+        _ waveform: MLXArray, chunkFrames: Int? = nil, checkpoint: (() throws -> Void)? = nil
+    ) throws -> MLXArray {
         let x = waveform.asType(.float32)
         let half = nFFT / 2
         // Reflect padding (torch.stft center=True): x[half], …, x[1] | x | x[n−2], …, x[n−1−half].
@@ -47,9 +49,11 @@ final class MelFrontend: Module {
             return 10 * MLX.log10(MLX.maximum(mel, MLXArray(Float(1e-10))))
         }
         let db: MLXArray
+        try checkpoint?()
         if let chunkFrames, chunkFrames < frames {
             eval(padded)
-            db = concatenated(stride(from: 0, to: frames, by: chunkFrames).map { start in
+            db = concatenated(try stride(from: 0, to: frames, by: chunkFrames).map { start in
+                try checkpoint?()
                 let part = logMel(start, min(chunkFrames, frames - start))
                 eval(part)
                 return part
