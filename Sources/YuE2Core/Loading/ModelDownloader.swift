@@ -64,13 +64,48 @@ public actor ModelDownloader {
         try await downloadOne(repoID: YuE2Pack.repoID, remotePath: files[1], to: shaURL) { written, total in
             progress(DownloadProgress(file: files[1], fileIndex: 0, fileCount: files.count, writtenBytes: written, totalBytes: total))
         }
-        if FileManager.default.fileExists(atPath: weightsURL.path), try verify(pack: pack) { return }
+        if FileManager.default.fileExists(atPath: weightsURL.path), try verify(pack: pack) {
+            try await downloadPackSupport(progress: progress)
+            return
+        }
         try? FileManager.default.removeItem(at: weightsURL)
         try await downloadOne(repoID: YuE2Pack.repoID, remotePath: files[0], to: weightsURL) { written, total in
             progress(DownloadProgress(file: files[0], fileIndex: 1, fileCount: files.count, writtenBytes: written, totalBytes: total))
         }
         guard try verify(pack: pack) else {
             throw YuE2Error.weightMismatch("\(pack.rawValue)/model.safetensors: SHA-256 does not match its .sha256 sidecar")
+        }
+        try await downloadPackSupport(progress: progress)
+    }
+
+    /// Brings the files `ModelSession.load` reads next to a pack (`YuE2Pack.supportFiles`) into
+    /// `YuE2-3B/` when they are missing, each verified against `support/SHA256SUMS` (ASK Q13).
+    /// Files already present are left alone (a full `m-a-p/YuE2-3B` download provides the configs).
+    public func downloadPackSupport(progress: @Sendable @escaping (DownloadProgress) -> Void = { _ in }) async throws {
+        let dir = modelsDir.appendingPathComponent(YuE2Pack.supportLocalDirectory)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let missing = YuE2Pack.supportFiles.filter { !FileManager.default.fileExists(atPath: dir.appendingPathComponent($0).path) }
+        guard !missing.isEmpty else { return }
+        let sumsURL = dir.appendingPathComponent(".support.sha256sums")
+        defer { try? FileManager.default.removeItem(at: sumsURL) }
+        try await downloadOne(repoID: YuE2Pack.repoID, remotePath: YuE2Pack.supportChecksums, to: sumsURL) { _, _ in }
+        var expected = [String: String]()
+        for line in try String(contentsOf: sumsURL, encoding: .utf8).split(separator: "\n") {
+            let parts = line.split(separator: " ", omittingEmptySubsequences: true)
+            if parts.count == 2 { expected[String(parts[1])] = String(parts[0]) }
+        }
+        for (index, file) in missing.enumerated() {
+            guard let hash = expected[file] else {
+                throw YuE2Error.weightMismatch("\(YuE2Pack.supportChecksums) has no entry for \(file)")
+            }
+            let destination = dir.appendingPathComponent(file)
+            try await downloadOne(repoID: YuE2Pack.repoID, remotePath: "support/\(file)", to: destination) { written, total in
+                progress(DownloadProgress(file: file, fileIndex: index, fileCount: missing.count, writtenBytes: written, totalBytes: total))
+            }
+            guard try Self.sha256Hex(of: destination).caseInsensitiveCompare(hash) == .orderedSame else {
+                try? FileManager.default.removeItem(at: destination)
+                throw YuE2Error.weightMismatch("support/\(file): SHA-256 differs from \(YuE2Pack.supportChecksums) (removed)")
+            }
         }
     }
 

@@ -43,7 +43,7 @@ yue2 download --model packs                  # all three (10.4 GB)
 yue2 references                              # prints the download line for each profile
 ```
 
-`ModelDownloader.download(pack:)` fetches the sidecar, then the weights (resumable), and refuses a file whose SHA-256 does not match; a pack already present and verified is skipped. Files land exactly where `LMWeightLoader.load` looks for the preset, so the first-use quantization never runs. `Scripts/publish-packs.sh` is what produced the staging tree and checksums (it uploads nothing by itself; `hf upload` did).
+`ModelDownloader.download(pack:)` fetches the sidecar, then the weights (resumable), and refuses a file whose SHA-256 does not match; a pack already present and verified is skipped. It also brings the four small files the engine reads next to the weights — `config.json`, `yue2_generation_config.json` (from m-a-p/YuE2-3B) and `tokenizer.json`, `tokenizer_config.json` (Qwen2.5's, converted) — from the repository's `support/` folder into `YuE2-3B/` when they are missing, verified against `support/SHA256SUMS`: **a pack downloaded into an empty directory loads on its own** (add `--model vae` for a whole song). Files land exactly where `LMWeightLoader.load` looks for the preset, so the first-use quantization never runs. `Scripts/publish-packs.sh` is what produced the staging tree and checksums (it uploads nothing by itself; `hf upload` did).
 
 In Swift: `YuE2ReferenceProfile.named("4bit-lean")!.pack` → `.int4MixedHead`; `try await ModelDownloader(modelsDir: dir).download(pack: .int4MixedHead)`. The iOS app can download the profile's pack on first launch instead of shipping it through Finder.
 

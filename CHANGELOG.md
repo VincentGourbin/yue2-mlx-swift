@@ -2,6 +2,10 @@
 
 Published versions are squashed commits on `main` (the working history stays local); each version has a tag and a GitHub release.
 
+## 1.8.1 — 2026-10-07
+
+- **A pack downloaded alone is loadable (ASK Q13)**: `yue2 download --model <pack>` / `ModelDownloader.download(pack:)` also fetches the files `ModelSession` reads next to the weights — `config.json`, `yue2_generation_config.json` (m-a-p/YuE2-3B) and the converted Qwen2.5 tokenizer (`tokenizer.json`, `tokenizer_config.json`) — now published under `support/` in `VincentGOURBIN/yue2-mlx-packs`, SHA-256 verified, skipped when present (`downloadPackSupport()`). Checked end to end: empty directory → `download --model int4-mixed-head` → `plan` runs; `PackSupportTests` keeps it so.
+
 ## 1.8.0 — 2026-10-04
 
 - **Resume an edited NAR solve (ASK Q8)**: `Synthesizer.synthesize(edit:resume:)` now accepts both — the `.keep` mask ("redo from here") is rebuilt from the seed's noise and the kept latents and re-imposed from the resumed step, `.variation`'s start state is superseded by the checkpoint; bit-identical to the uninterrupted edited solve (tested for both edits). An interrupted "redo from here" no longer restarts its stage.

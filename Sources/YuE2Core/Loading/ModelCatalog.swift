@@ -117,6 +117,15 @@ public enum YuE2Pack: String, CaseIterable, Sendable {
     /// Destination directory, relative to `$YUE2_MODELS_DIR`.
     public var localDirectory: String { "YuE2-3B/mlx-prequantized/\(rawValue)" }
 
+    /// The small files `ModelSession.load` reads next to the weights (ASK Q13): the model config and
+    /// generation config (from m-a-p/YuE2-3B, CC-BY-NC-4.0) and the tokenizer converted from
+    /// Qwen2.5 (Apache-2.0, `Scripts/convert-tokenizer.py`). Published under `support/` in the packs
+    /// repository with `support/SHA256SUMS`, they land in `YuE2-3B/`, so a pack downloaded into an
+    /// empty models directory loads on its own.
+    public static let supportFiles = ["config.json", "yue2_generation_config.json", "tokenizer.json", "tokenizer_config.json"]
+    public static let supportChecksums = "support/SHA256SUMS"
+    public static let supportLocalDirectory = "YuE2-3B"
+
     /// Download size, for progress and free-space checks.
     public var approximateBytes: Int64 {
         switch self {
