@@ -265,3 +265,16 @@ func stitchedWindowEvents(
     }
     return accepted
 }
+
+extension Array where Element == SheetSage2Event {
+    /// The transcription's beat grid: global 16th-note index → seconds in the audio, the clock a
+    /// lyric or score timeline is placed on (`LyricTimeline.build(…beatGrid:onsets:)`).
+    public var beatGrid: [(subbeat: Int, time: Double)] {
+        compactMap { e in e.time.map { (e.globalSubbeat, $0) } }
+    }
+
+    /// Every melody onset heard (any track), as global 16th and MIDI pitch.
+    public var melodyOnsets: [(subbeat: Int, midi: Int)] {
+        flatMap { e in (e.values.melody ?? []).map { (e.globalSubbeat, $0.pitch) } }
+    }
+}

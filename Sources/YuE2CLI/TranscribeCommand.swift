@@ -35,20 +35,7 @@ struct TranscribeCommand: AsyncParsableCommand {
     var out: String = "."
 
     func run() async throws {
-        let directory: URL
-        if let model {
-            directory = URL(fileURLWithPath: model)
-        } else if let root = ProcessInfo.processInfo.environment["YUE2_MODELS_DIR"], !root.isEmpty {
-            let base = URL(fileURLWithPath: root)
-            let profileBits = SheetSage2Profile.named(profile)?.bits ?? 16
-            let packName = ["SheetSage2-q8", "SheetSage2-q4"][safe: profileBits == 8 ? 0 : profileBits == 4 ? 1 : -1]
-            let candidates = (precision == nil ? [packName].compactMap { $0 } : []) + ["SheetSage2-fp16", "SheetSage2"]
-            directory = candidates.map { base.appendingPathComponent($0) }
-                .first { FileManager.default.fileExists(atPath: $0.appendingPathComponent("model.safetensors").path) }
-                ?? base.appendingPathComponent("SheetSage2")
-        } else {
-            throw ValidationError("pass --model or set YUE2_MODELS_DIR")
-        }
+        let directory = try SheetSage2Support.directory(model: model, profile: profile, unquantized: precision != nil)
         guard let reference = SheetSage2Profile.named(profile) else {
             throw ValidationError("unknown profile \(profile); one of \(SheetSage2Profile.all.map(\.id).joined(separator: ", "))")
         }
@@ -91,6 +78,25 @@ struct TranscribeCommand: AsyncParsableCommand {
             try abc.write(to: dir.appendingPathComponent("score.abc"), atomically: true, encoding: .utf8)
         }
         try JSONSerialization.data(withJSONObject: result.tokens, options: []).write(to: dir.appendingPathComponent("tokens.json"))
+        // Timed events (beat grid, melody notes with stitched end times) for alignment tools.
+        let events: [[String: Any]] = result.events.map { event in
+            var row: [String: Any] = ["subbeat": event.globalSubbeat]
+            if let time = event.time { row["time"] = time }
+            let values = event.values
+            if let meter = values.meter { row["meter"] = [meter.0, meter.1] }
+            if let position = values.eighthPosition { row["eighth_position"] = position }
+            if let structure = values.structure { row["structure"] = structure }
+            if let chord = values.chord { row["chord"] = chord }
+            if let melody = values.melody {
+                row["melody"] = melody.map { note -> [String: Any] in
+                    var item: [String: Any] = ["pitch": note.pitch, "track": note.track, "duration_steps": note.durationSteps]
+                    if let end = note.endTime { item["end_time"] = end }
+                    return item
+                }
+            }
+            return row
+        }
+        try JSONSerialization.data(withJSONObject: events, options: [.sortedKeys]).write(to: dir.appendingPathComponent("events.json"))
         let summary: [String: Any] = [
             "audio": URL(fileURLWithPath: audio).lastPathComponent, "duration_seconds": result.durationSeconds,
             "events": result.events.count, "windows": result.tokens.count, "tokens": result.tokens.map(\.count),

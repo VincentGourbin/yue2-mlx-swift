@@ -16,6 +16,9 @@ public struct SongRequest: Codable, Equatable, Sendable {
     /// sections…): forced as the first ABC tokens, the model writes the rest. Ignored with `abc`.
     public var abcPrefix: String?
     public var cfgScale: Double?
+    /// EXPERIMENTAL: style tags for the negative CFG branch (e.g. "vocals, singing" to steer an
+    /// instrumental away from a voice). `nil` keeps the native unconditional negative prefix.
+    public var negativeStyle: String?
     public var id: String
 
     public init(
@@ -84,6 +87,7 @@ public struct SongRequest: Codable, Equatable, Sendable {
         case style, lyrics, cot, seed, abc
         case abcPrefix = "abc_prefix"
         case cfgScale = "cfg_scale"
+        case negativeStyle = "negative_style"
         case id
     }
 
@@ -103,5 +107,6 @@ public struct SongRequest: Codable, Equatable, Sendable {
             cfgScale: container.decodeIfPresent(Double.self, forKey: .cfgScale),
             id: container.decodeIfPresent(String.self, forKey: .id) ?? "song"
         )
+        negativeStyle = try container.decodeIfPresent(String.self, forKey: .negativeStyle)
     }
 }

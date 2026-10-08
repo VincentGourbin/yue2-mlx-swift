@@ -53,7 +53,7 @@ A released branch is unusable until reloaded (it would compute on zeros): that i
 ```swift
 public final class YuE2Pipeline {
     init(session:vae: any VAEDecoding, config:, vaeCoreFrames: Int? = nil, releaseWeightsBetweenStages: Bool? = nil)
-    func generate(request:abcSampling:semanticSampling:profiling:onEvent:narResume:onNARStep:cancel:) async throws -> SongResult
+    func generate(request:abcSampling:semanticSampling:profiling:timeline:onEvent:narResume:onNARStep:cancel:) async throws -> SongResult
 }
 ```
 
@@ -97,6 +97,50 @@ let saved = try SongResult.load(from: directory)                               /
 ```
 
 Underneath: `SemanticGenerator.generateSemantic(plan:sampling:continuation:onToken:cancel:)` takes the kept tokens as the AR's past; `Synthesizer.synthesize(... edit: NAREdit?)` with `.variation(latents:strength:)` (start state `noise·t + latents·(1−t)`, `round((1−strength)·steps)` steps skipped) or `.keep(latents:frames:)` (kept frames re-imposed after every step, returned bit-exact); `CachedNAR.solve(... keep:)` is the inpainting mask. `MelodyTranscriber` is pure CPU (vDSP), deterministic, tested on synthetic tones; `NAREditTests` covers the two edits on the tiny model.
+
+## Song timeline: bars, notes and lyrics on the audio
+
+A player follows a generated song from `timeline.json` (`LyricTimeline`): the start of every score bar and beat, every sung note, every line, word and syllable, each with its seconds and its musical position (`bar` 0-based, `beat` 1-based and fractional). The times come from the LM's own alignment heads, read right after the semantic phase: no audio analysis, no extra model. Method and measurements: [CLI.md](CLI.md#timing-timelinejson---timeline-karaoke).
+
+```swift
+// in a staged run: after the semantic phase, before the AR weights are released
+let semantic = try SemanticGenerator(model: s.model, tokenizer: s.tokenizer, config: config)
+    .generateSemantic(plan: plan, sampling: sampling, onToken: onToken, cancel: cancel)
+let timeline = try AttentionTimeline.timeline(model: s.model, tokenizer: s.tokenizer, semantic: semantic, cancel: cancel)
+try timeline.write(to: songDirectory.appendingPathComponent("timeline.json"))
+
+// with the pipeline
+let song = try await pipeline.generate(request: request, timeline: true)   // song.timeline, saved by saveArtifacts
+
+// migration: songs saved before timelines existed (AR weights loaded once, any number of songs)
+for directory in songDirectories {        // plan.json + prefix.npy beside semantic.npy, or in a plan/ subdirectory
+    let timeline = try AttentionTimeline.reanalyze(song: directory, model: s.model, tokenizer: s.tokenizer, cancel: cancel)
+    try timeline.write(to: directory.appendingPathComponent("timeline.json"))
+}
+
+// playback: binary searches, nothing recomputed
+let timeline = try LyricTimeline.load(from: url)
+let now = timeline.position(at: player.currentTime)   // bar, beat, note (while it sounds), line, word, syllable
+```
+
+| Type | Role |
+|---|---|
+| `LyricTimeline` | `bars` (`start`, `beats`, `section`), `notes` (`start`, `end`, `midi`, `bar`, `beat`, `beats`), `lines` → `words` (`onScore`) → `syllables` (`notes`, `firstNote`), `duration`, `grid`; `position(at:)`, `write(to:)`, `load(from:)`; `build(abc:lyrics:language:grid:heard:anchors:duration:)` places a score on any clock |
+| `AttentionTimeline` | `timeline(model:tokenizer:semantic:)` (fresh song, reuses the KV cache), `timeline(model:tokenizer:plan:semantic:)`, `reanalyze(song:model:tokenizer:)`, `SavedSong(directory:)`, `read(...)` (raw bar and word starts); the heads: `barHeads`, `wordHead`, `barLead` |
+| `ABCScore` | reader of the score dialect (two voices, sections, multi-bar rests, ties, inline `M:`/`K:` changes): bars, sounding notes, `barStarts` |
+| `YuE2ForCausalLM.prefixAttention(...)` | the teacher-forced pass: attention mass of chosen heads on prompt segments per frame |
+
+The pass runs layers 0–18 over prompt + song, one layer per unit of GPU work: it waits on `YuE2GPUGate` and throws `.cancelled` like the other stages. With the generation's cache (no CFG) it adds no cache memory; `reanalyze` builds its own cache for those 19 layers. A song without a score (`cot off`) throws; an instrumental gets bars and notes and no lines. `Language` (`en`, `fr`) is guessed from the style and decides syllabification.
+
+## Instrumental songs
+
+```swift
+let planned = try Planner(model: s.model, tokenizer: s.tokenizer, config: config).plan(request: request)   // lyrics: section tags if none
+let (render, transfer) = try Instrumental.renderRequest(from: request, plannedABC: planned.abc!)
+// render: Vocal notes moved to Ins, section tags as lyrics, "no vocals…" style, negativeStyle + cfg 1.5
+```
+
+`SongRequest.negativeStyle` (EXPERIMENTAL) conditions the negative CFG branch on tags (`[EOD] + instruction + [Tags] negativeStyle [Lyrics]`); it acts only when `guidance` ≠ 1. A render can still hum the verse (2 seeds in 8): check it (SheetSage2 track-0 notes, `yue2 generate --instrumental` re-rolls the seed).
 
 ## Transcription: `SheetSage2Core` (recording → ABC)
 

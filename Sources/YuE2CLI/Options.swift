@@ -67,6 +67,9 @@ struct RequestOptions: ParsableArguments {
     @Option(name: .long, help: "Classifier-free guidance scale, in [0, 20] (overrides --request's cfg_scale).")
     var cfgScale: Double?
 
+    @Option(name: .long, help: "EXPERIMENTAL: style tags for the negative CFG branch, e.g. \"vocals, singing\" for an instrumental; needs --cfg-scale > 1 (overrides --request's negative_style).")
+    var negativeStyle: String?
+
     @Option(name: .long, help: "Filename-safe run id (overrides --request's id).")
     var id: String?
 
@@ -79,6 +82,7 @@ struct RequestOptions: ParsableArguments {
         var abcPrefix: String?
         var cfgScale = self.cfgScale
         var id = self.id
+        var negativeStyle = self.negativeStyle
 
         if let request {
             let data = try Data(contentsOf: URL(fileURLWithPath: request))
@@ -91,6 +95,7 @@ struct RequestOptions: ParsableArguments {
             abcPrefix = base.abcPrefix
             cfgScale = cfgScale ?? base.cfgScale
             id = id ?? base.id
+            negativeStyle = negativeStyle ?? base.negativeStyle
         }
         if let cot { cotRaw = cot }
         if let abcFile {
@@ -105,9 +110,10 @@ struct RequestOptions: ParsableArguments {
         guard let cotMode = CoTMode(rawValue: cotRaw ?? CoTMode.full.rawValue) else {
             throw YuE2Error.invalidRequest("cot must be off, melody or full")
         }
-        let request = try SongRequest(
+        var request = try SongRequest(
             style: style, lyrics: lyrics, cot: cotMode, seed: seed ?? 831_001,
             abc: abc, abcPrefix: abcPrefix, cfgScale: cfgScale, id: id ?? "song")
+        request.negativeStyle = negativeStyle
         return followStyleKey ? request.followingStyleKey() : request
     }
 }

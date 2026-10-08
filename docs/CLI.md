@@ -17,6 +17,7 @@ Binary produced by `xcodebuild -scheme yue2 -configuration Release -destination 
 | `references` | lists the reference configurations |
 | `melody` | hummed or sung recording → ABC score the model takes as its plan |
 | `transcribe` | mixed recording → ABC score (SheetSage2 port), for covers with `cot melody` |
+| `karaoke` | times the score bars, sung notes and lyrics of a saved song (`timeline.json`) |
 | `vary` | variation of a saved song (same score and tokens, SDEdit on its latents) |
 | `regenerate` | keeps a saved song up to a point in time, regenerates the rest |
 | `parity vae|lm|nar` | numerical parity against the PyTorch dumps |
@@ -54,8 +55,12 @@ The request file: `style`, `lyrics` (`[Verse]`, `[Chorus]`, `[Bridge]`, `[Outro]
 | `--vae` | `standard` | `legacy` for the older VAE |
 | `--format` | `int16` | `float32` |
 | `--profile` | off | per-phase report, TTS metrics, `trace.json` in `--out` |
+| `--timeline` | off | writes `timeline.json`: bars, sung notes and lyrics timed on the audio ([Timing](#timing-timelinejson---timeline-karaoke)) |
+| `--instrumental` | off | song without a voice ([Instrumental](#instrumental---instrumental)) |
+| `--instrumental-retries` | 2 | with `--instrumental`: renders on the next seeds when SheetSage2 hears a voice; 0 skips the check |
+| `--negative-style` | — | EXPERIMENTAL: tags for the negative CFG branch (`[Tags]` of that branch instead of the bare instruction); only acts when `--cfg-scale` ≠ 1 |
 
-Artifacts in `--out`: `score.abc`, `abc_tokens.npy`, `prefix.npy`, `semantic.npy`, `latent.npy`, `audio.wav`, `plan.json`, `request.json`, `config.json`, `result.json` (times and hashes), `trace.json` with `--profile`.
+Artifacts in `--out`: `score.abc`, `abc_tokens.npy`, `prefix.npy`, `semantic.npy`, `latent.npy`, `audio.wav`, `plan.json`, `request.json`, `config.json`, `result.json` (times and hashes), `trace.json` with `--profile`, `timeline.json` with `--timeline`, `planned.abc` and `instrumental.json` with `--instrumental`.
 
 ## Stage by stage
 
@@ -151,6 +156,32 @@ yue2 generate --style "…" --lyrics "[Chorus]…[Verse]…[Chorus]…" --cot me
 How it works, and what it costs: the encoder always sees a 300 s window (shorter audio is padded with silence, as upstream: its normalization spans the whole window, so a shorter window changes the transcription); songs longer than 300 s are cut into overlapping windows whose decoder continues the previous one. Fidelity: on two excerpts (orchestral, pop) and a 500 s movement, the tokens and the ABC are byte-identical to upstream in `fp32`; `fp16` keeps the small ConvNeXt front in `fp32` (its normalization overflows `fp16`). Measured on the M3 Max (release build, `fp16`, model loaded in 0.6 s): 13 s of audio transcribed in 2.4 s, 30 s in 3.0 s, a 500 s movement (4 windows, 11 236 tokens) in 21 s; footprint 1.6 GB once loaded, 3.3 GB peak on one window, 3.5 GB on 500 s (`fp32`: 2.7 GB, 4.4-4.8 GB peak, +25 % time). The upstream PyTorch on the same Mac (MPS, `fp32`): 7.9 s and 17 GB for the 30 s excerpt, and it collapses past ≈ 3 000 decoding steps (105 GiB on a full window). Greedy decoding is sensitive: on a long, rubato orchestral piece `fp16` drifts from `fp32` after a few hundred tokens (note F1 0.33 between the two), less than a mere change of input resampler does in `fp32` (F1 0.25); the input here is resampled by AVAudioConverter, upstream by ffmpeg, so the same file can give a slightly different score than the Python tool.
 
 Put the key and tempo SheetSage2 found (`K:`, `Q:`) in the style prompt. With `--abc-file` alone the AR may sing past the end of a short score; with `--abc-prefix-file` the planner tends to repeat the given section before writing new ones. Read the score before generating: it is the edit point (fix a note, change the tempo, add sections by hand).
+
+## Timing: `timeline.json` (`--timeline`, `karaoke`)
+
+A player that follows the song (karaoke line, score playhead) needs the time of every bar, note and word of the rendered audio, not the score's nominal tempo: the render can drop or add material (2.4 s off after an intro on one song), a song cut to length stops mid-lyrics, and the voice sometimes leaves the planned melody. `timeline.json` gives those times once, sorted, ready to binary-search at the playback position:
+
+- `bars`: `index` (0-based score bar), `start`, `beats` (start of each beat), `section` (`% verse`…);
+- `notes`: the sung notes of the score (`Vocal` voice, ties merged: a held note is one note), `start`, `end`, `midi`, `bar`, `beat` (1-based, fractional: 2.5 is the "and" of beat 2), `beats` (written length);
+- `lines` → `words` → `syllables`: `text`, `start`, `end`, `bar`, `beat`; a syllable carries `notes` (> 1: melisma) and `firstNote` (index in `notes`); `onScore: false` marks a word the voice sings away from the score's notes (timed by the voice alone, `firstNote` -1);
+- `duration`: bars, notes and lines the audio never reaches are dropped; `grid`: the clock used (`attention`, `beats`, `nominal`).
+
+How the times are found, without analysing the audio: while it writes each 40 ms semantic frame, the LM attends to its prompt, and a few heads follow the song — four look at the score bar being played (layers/heads 6/8, 10/3, 18/7, 18/6, 0.33 s ahead of the music), one at the next lyric word (14/10). After the semantic phase a teacher-forced pass over 19 of the 28 layers reads them back (reusing the generation's KV cache: 1–2 s on the M3 Max, no extra model, identical in int4). Words are then placed on the score's notes by a monotonic alignment pulled toward those word starts, and the bar clock is nudged by the words around each bar.
+
+Measured on eight songs (four generated on an iPhone in int4, four on the Mac; EN and FR, 87–132 BPM; reference: MMS forced alignment of the Demucs-separated voice): word starts 71–97 % within 300 ms (median error 59–80 ms on seven songs, 122 ms on a whistled-theme song whose score stops after five bars); bar starts within 60–160 ms (median) of a SheetSage2 transcription of the render. Placing the score on a SheetSage2 beat grid instead (`karaoke --sheetsage`) is a little finer when the voice follows the score (83–98 %) and fails when it does not (10–12 % on three of the eight).
+
+```bash
+yue2 generate --request song.json --reference 4bit-lean --timeline --out run/   # timeline.json beside audio.wav
+yue2 karaoke --song run/                       # same, afterwards (needs the saved plan and semantic.npy; loads the AR weights)
+yue2 karaoke --song a/ --song b/ --skip-existing   # migration: one model load, songs without timeline.json only
+yue2 karaoke --song run/ --sheetsage           # score on a SheetSage2 beat grid of audio.wav instead
+```
+
+`karaoke` reads a `generate --out` directory or an app song directory (`plan/` + `semantic.npy`); 8 saved songs take 10 s on the M3 Max, model load included. From Swift: [API.md](API.md#song-timeline-bars-notes-and-lyrics-on-the-audio). An instrumental gets its bars and notes, no lines.
+
+## Instrumental (`--instrumental`)
+
+The upstream recipe (m-a-p `skills/yue2-music/instrumental`): plan a score (section tags as lyrics when none are given), move every `Vocal` note to `Ins` (the `Vocal` voice keeps rests and chord symbols; on a bar where both voices play, the voice wins), render that imposed score with section tags as lyrics and a style ending in "no vocals…". On top of it: a negative CFG branch conditioned on voice tags (`cfg_scale` 1.5) and a voice check of the render (SheetSage2 sung-note count, re-render on the next seed above 4 notes). Without the transfer the model sings whatever the style says; with everything, 6 renders in 8 had no voice on the first seed (a leak, when there is one, hums the verse). Writes `planned.abc` (the score before the transfer) and `instrumental.json` (moved notes, checks per seed).
 
 ## `encode`, `remix-experimental`
 

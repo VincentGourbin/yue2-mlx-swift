@@ -16,6 +16,10 @@ func resolveConfig(_ base: GenerationConfig, odeSteps: Int?) throws -> Generatio
 }
 
 struct GenerateCommand: AsyncParsableCommand {
+    /// Sung notes SheetSage2 may hear on an instrumental before it counts as a voice (clean
+    /// renders: 0; a hummed verse: 25+).
+    static let voiceNoteTolerance = 4
+
     static let configuration = CommandConfiguration(
         commandName: "generate",
         abstract: "Generate a complete song end to end: plan, semantic tokens, NAR synthesis, VAE decode."
@@ -57,6 +61,15 @@ struct GenerateCommand: AsyncParsableCommand {
 
     @Flag(name: .long, help: "Compile the per-layer math of single-token AR steps (dispatch-bound decode).")
     var compiledDecode: Bool = false
+
+    @Flag(name: .long, help: "Instrumental song (upstream recipe): plan a score (section tags as lyrics when none are given), move the Vocal melody to Ins, render it with a \"no vocals\" style and a negative CFG branch on voice tags; SheetSage2 then checks the render for a voice and re-rolls the seed if it hears one.")
+    var instrumental = false
+
+    @Flag(name: .long, help: "Also write timeline.json: score bars, sung notes and lyrics (lines, words, syllables) timed on the audio, read from the LM's alignment heads after the semantic phase (≈ 1–2 s).")
+    var timeline = false
+
+    @Option(name: .long, help: "With --instrumental: extra renders (next seeds) when SheetSage2 hears a voice; 0 skips the check.")
+    var instrumentalRetries: Int = 2
 
     @Option(name: .long, help: "One of the six reference configurations (4bit-fast, 4bit-lean, 8bit-fast, 8bit-lean, 16bit-fast, 16bit-lean); sets quant, precision, NAR compute, VAE, residency and memory profile — `yue2 references` lists them.")
     var reference: String?
@@ -120,28 +133,77 @@ struct GenerateCommand: AsyncParsableCommand {
         let pipeline = YuE2Pipeline(
             session: session, vae: vaeModel, config: config,
             vaeCoreFrames: vaeTile, releaseWeightsBetweenStages: releaseWeights)
-        let result = try await pipeline.generate(
-            request: request, abcSampling: abcSampling, semanticSampling: semanticSampling,
-            profiling: profilingSession
-        ) { event in
-            switch event {
-            case .stage(let name):
-                FileHandle.standardError.write(Data("\(name)\u{2026}\n".utf8))
-            case .abcToken:
-                break
-            case .semanticToken(let count):
-                if count > 0, count - lastSemanticCount >= 100 {
-                    lastSemanticCount = count
-                    FileHandle.standardError.write(Data("semantic \(count) tokens\u{2026}\n".utf8))
-                }
-            case .narProgress(let completed, let total), .vaeProgress(let completed, let total):
-                if completed == total {
-                    FileHandle.standardError.write(Data("\u{2026} \(completed)/\(total)\n".utf8))
+        let outURL = URL(fileURLWithPath: out)
+        var renderRequest = request
+        var instrumentalLog: [String: Any] = [:]
+        if instrumental {
+            var planning = request
+            if planning.cot == .off { planning.cot = .full }
+            if planning.lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                planning.lyrics = "[Intro]\n\n[Verse]\n\n[Chorus]\n\n[Outro]"
+            }
+            let plannedABC: String
+            if let abc = request.abc {
+                plannedABC = abc
+            } else {
+                FileHandle.standardError.write(Data("plan (instrumental)\u{2026}\n".utf8))
+                let plan = try Planner(model: session.model, tokenizer: session.tokenizer, config: config)
+                    .plan(request: planning, abcSampling: abcSampling)
+                guard let abc = plan.abc else { throw YuE2Error.invalidRequest("instrumental: the planner wrote no score") }
+                plannedABC = abc
+            }
+            let (moved, transfer) = try Instrumental.renderRequest(from: planning, plannedABC: plannedABC)
+            renderRequest = moved
+            try FileManager.default.createDirectory(at: outURL, withIntermediateDirectories: true)
+            try plannedABC.write(to: outURL.appendingPathComponent("planned.abc"), atomically: true, encoding: .utf8)
+            instrumentalLog = ["vocal_notes_moved": transfer.vocalNotes, "moved_bars": transfer.movedBars,
+                               "kept_ins_bars": transfer.keptInsBars, "overlap_bars": transfer.overlapBars,
+                               "negative_style": moved.negativeStyle ?? "", "cfg_scale": moved.guidance]
+            FileHandle.standardError.write(Data("instrumental: \(transfer.vocalNotes) Vocal notes moved to Ins (\(transfer.movedBars) bars, \(transfer.overlapBars.count) overlaps)\n".utf8))
+        }
+        var checks: [[String: Any]] = []
+        var result: SongResult
+        while true {
+            lastSemanticCount = 0
+            result = try await pipeline.generate(
+                request: renderRequest, abcSampling: abcSampling, semanticSampling: semanticSampling,
+                profiling: profilingSession, timeline: timeline
+            ) { event in
+                switch event {
+                case .stage(let name):
+                    FileHandle.standardError.write(Data("\(name)\u{2026}\n".utf8))
+                case .abcToken:
+                    break
+                case .semanticToken(let count):
+                    if count > 0, count - lastSemanticCount >= 100 {
+                        lastSemanticCount = count
+                        FileHandle.standardError.write(Data("semantic \(count) tokens\u{2026}\n".utf8))
+                    }
+                case .narProgress(let completed, let total), .vaeProgress(let completed, let total):
+                    if completed == total {
+                        FileHandle.standardError.write(Data("\u{2026} \(completed)/\(total)\n".utf8))
+                    }
                 }
             }
-        }
 
-        try result.saveArtifacts(to: URL(fileURLWithPath: out), format: format.sampleFormat)
+            try result.saveArtifacts(to: outURL, format: format.sampleFormat)
+            guard instrumental, instrumentalRetries > 0 else { break }
+            let heard = try SheetSage2Support.transcribe(audio: outURL.appendingPathComponent("audio.wav"), model: nil, profile: "16bit-fast")
+            let voiceNotes = SheetSage2Support.vocalNotes(heard.events)
+            checks.append(["seed": renderRequest.seed, "voice_notes": voiceNotes])
+            FileHandle.standardError.write(Data("voice check (seed \(renderRequest.seed)): SheetSage2 hears \(voiceNotes) sung notes\n".utf8))
+            if voiceNotes <= Self.voiceNoteTolerance || checks.count > instrumentalRetries { break }
+            renderRequest.seed = renderRequest.seed == Int.max ? 0 : renderRequest.seed + 1
+            if releaseWeights {
+                try session.loadWeights(of: .ar)
+                try session.loadWeights(of: .nar)
+            }
+        }
+        if instrumental {
+            instrumentalLog["voice_checks"] = checks
+            try JSONSerialization.data(withJSONObject: instrumentalLog, options: [.prettyPrinted, .sortedKeys])
+                .write(to: outURL.appendingPathComponent("instrumental.json"))
+        }
 
         if let profilingSession {
             profilingSession.finish()
@@ -153,7 +215,7 @@ struct GenerateCommand: AsyncParsableCommand {
 
         let seconds = Double(result.audio.dim(1)) / Double(result.sampleRate)
         print(
-            "generated \(request.id): \(String(format: "%.1f", seconds)) s audio"
+            "generated \(renderRequest.id): \(String(format: "%.1f", seconds)) s audio"
                 + " in \(String(format: "%.1f", result.timing.e2eSeconds)) s"
                 + " (abc \(String(format: "%.1f", result.timing.abc?.seconds ?? 0)) s,"
                 + " semantic \(String(format: "%.1f", result.timing.semantic.seconds)) s,"

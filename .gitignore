@@ -16,3 +16,4 @@ Apps/**/xcuserdata/
 Apps/YuE2Mobile/Signing.xcconfig
 .local-runs/signing.yml
 .venv-sheetsage2/
+.venv-karaoke/

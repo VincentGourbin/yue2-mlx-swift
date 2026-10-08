@@ -68,6 +68,20 @@ struct ProtocolTests {
         }
     }
 
+    @Test func negativeStyleConditionsTheNegativeBranch() throws {
+        var request = try SongRequest(style: "STYLE", lyrics: "LYRIC", cot: .full, cfgScale: 1.5)
+        request.negativeStyle = "vocals, singing"
+        let ids = [17, 19, 23]
+        let negative = try Prefixes.negativePrefix(request: request, tokenizer: tokenizer, abcIDs: ids)
+        let tail = [YuE2Token.abcStart, 17, 19, 23, YuE2Token.abcEnd, YuE2Token.musicStart]
+        let text = "\(CoTMode.full.instruction)\n[Tags]\nvocals, singing\n[Lyrics]\n\n"
+        #expect(negative == [YuE2Token.eod] + tokenizer.encode(text) + tail)
+        let decoded = try JSONDecoder().decode(SongRequest.self, from: Data(#"{"style":"a","lyrics":"b","negative_style":"vocals"}"#.utf8))
+        #expect(decoded.negativeStyle == "vocals")
+        let plain = try JSONEncoder().encode(SongRequest(style: "a", lyrics: "b"))
+        #expect(!String(decoding: plain, as: UTF8.self).contains("negative_style"))
+    }
+
     @Test func negativePrefixOffMode() throws {
         let request = try SongRequest(style: "a", lyrics: "b", cot: .off)
         let negative = try Prefixes.negativePrefix(request: request, tokenizer: tokenizer)

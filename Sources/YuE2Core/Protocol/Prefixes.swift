@@ -46,7 +46,13 @@ public enum Prefixes {
         tokenizer: TextEncoding,
         abcIDs: [Int]? = nil
     ) throws -> [Int] {
-        let base = [YuE2Token.eod] + tokenizer.encode(request.cot.instruction)
+        let base: [Int]
+        if let negativeStyle = request.negativeStyle {
+            // Experimental negative conditioning: the same prompt layout with the unwanted tags.
+            base = [YuE2Token.eod] + tokenizer.encode("\(request.cot.instruction)\n[Tags]\n\(negativeStyle)\n[Lyrics]\n\n")
+        } else {
+            base = [YuE2Token.eod] + tokenizer.encode(request.cot.instruction)
+        }
         if request.cot == .off {
             return base + [YuE2Token.musicStart]
         }

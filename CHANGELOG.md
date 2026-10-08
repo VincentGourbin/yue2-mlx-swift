@@ -2,6 +2,15 @@
 
 Published versions are squashed commits on `main` (the working history stays local); each version has a tag and a GitHub release.
 
+## 1.9.0 — 2026-10-08
+
+- **Song timeline (`timeline.json`)**: the start of every score bar and beat, every sung note, every lyric line, word and syllable of a generated song, with seconds and musical position (`bar`, fractional `beat`), for a player to follow without recomputing anything. The times come from the LM itself: four AR heads attend to the score bar being played (layers/heads 6/8, 10/3, 18/7, 18/6, 0.33 s ahead) and one to the next lyric word (14/10); a teacher-forced pass over layers 0-18 reads them after the semantic phase, reusing the generation's KV cache (1-2 s on an M3 Max, identical in int4). No audio analysis, no extra model. Measured on eight songs (four generated on an iPhone in int4, EN/FR, 87-132 BPM) against an MMS forced alignment of the Demucs-separated voice: word starts 71-97 % within 300 ms (median error 59-80 ms), bars 60-160 ms from a SheetSage2 transcription; it holds where placing the score on a SheetSage2 beat grid fails (voice leaving the planned melody, 10-12 % there).
+  - `AttentionTimeline.timeline(model:tokenizer:semantic:)` (fresh song), `reanalyze(song:model:tokenizer:)` (songs saved earlier, CLI or app layout — migration), `LyricTimeline.position(at:)` (bar, beat, note, line, word, syllable by binary search), `write(to:)` / `load(from:)`; `YuE2Pipeline.generate(…, timeline: true)` → `SongResult.timeline`. GPU gate and cancellation per layer.
+  - Songs cut to length keep only what is sung (`duration`); words sung away from the score's notes are `onScore: false`; instrumentals get bars and notes.
+  - CLI: `generate --timeline`, `karaoke --song … [--skip-existing] [--sheetsage]`.
+- **Instrumental songs**: `generate --instrumental` — upstream recipe (Vocal melody moved to Ins, section tags, "no vocals" style) plus a negative CFG branch on voice tags (`SongRequest.negativeStyle`, experimental, `--negative-style`) and a SheetSage2 voice check that re-renders on the next seed (6 renders in 8 clean on the first seed). `Instrumental.renderRequest(from:plannedABC:)`.
+- `ABCScore`: reader of the score dialect (voices, sections, multi-bar rests, ties, inline `M:`/`K:` changes). `transcribe` writes `events.json` as its help said. `SheetSage2Events` gain `beatGrid` / `melodyOnsets`.
+
 ## 1.8.1 — 2026-10-07
 
 - **A pack downloaded alone is loadable (ASK Q13)**: `yue2 download --model <pack>` / `ModelDownloader.download(pack:)` also fetches the files `ModelSession` reads next to the weights — `config.json`, `yue2_generation_config.json` (m-a-p/YuE2-3B) and the converted Qwen2.5 tokenizer (`tokenizer.json`, `tokenizer_config.json`) — now published under `support/` in `VincentGOURBIN/yue2-mlx-packs`, SHA-256 verified, skipped when present (`downloadPackSupport()`). Checked end to end: empty directory → `download --model int4-mixed-head` → `plan` runs; `PackSupportTests` keeps it so.

@@ -37,6 +37,14 @@ public final class YuE2Tokenizer: TextDecoding, @unchecked Sendable {
         return tokenizer.encode(text: normalized, addSpecialTokens: false)
     }
 
+    /// UTF-8 bytes token `id` stands for (byte-level BPE: one vocabulary character per byte);
+    /// 0 outside the ordinary text vocabulary. Lets a caller map tokens to exact byte offsets of
+    /// the text they encode, even when a token splits a multi-byte character.
+    public func byteCount(of id: Int) -> Int {
+        guard id >= 0, id < YuE2Token.eod else { return 0 }
+        return tokenizer.convertIdToToken(id)?.unicodeScalars.count ?? 0
+    }
+
     /// Decodes, silently dropping any id outside the ordinary text vocabulary (`< EOD`).
     public func decode(_ ids: [Int]) -> String {
         let ordinary = ids.filter { $0 >= 0 && $0 < YuE2Token.eod }

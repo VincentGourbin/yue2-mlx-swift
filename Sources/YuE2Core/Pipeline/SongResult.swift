@@ -40,6 +40,8 @@ public struct SongResult {
     public let latents: MLXArray
     public let config: GenerationConfig
     public let timing: SongTiming
+    /// Score bars and lyrics timed on the audio (`AttentionTimeline`), when requested.
+    public var timeline: LyricTimeline?
 
     public var truncated: (abc: Bool, semantic: Bool) {
         (semantic.plan.truncated, semantic.truncated)
@@ -81,6 +83,9 @@ public struct SongResult {
         encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
         try encoder.encode(semantic.plan.request).write(to: directory.appendingPathComponent("request.json"))
         try encoder.encode(config).write(to: directory.appendingPathComponent("config.json"))
+        if let timeline {
+            try encoder.encode(timeline).write(to: directory.appendingPathComponent("timeline.json"))
+        }
 
         let manifest = ResultManifest(
             status: "complete",

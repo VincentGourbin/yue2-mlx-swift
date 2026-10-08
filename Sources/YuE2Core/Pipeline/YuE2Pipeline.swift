@@ -51,6 +51,7 @@ public final class YuE2Pipeline {
         abcSampling: Sampling? = nil,
         semanticSampling: Sampling? = nil,
         profiling profilingSession: ProfilingSession? = nil,
+        timeline makeTimeline: Bool = false,
         onEvent: ((PipelineEvent) -> Void)? = nil,
         narResume: NARCheckpoint? = nil,
         onNARStep: ((NARCheckpoint) -> Void)? = nil,
@@ -84,6 +85,17 @@ public final class YuE2Pipeline {
             }, cancel: cancel)
         profiler.endSemanticGen(frameCount: semantic.tokens.count)
         profiler.setTTFT(semantic.timing.ttftSeconds)
+
+        // Timing read from the AR heads while their weights are still resident (≈ 1–2 s on Mac).
+        var timeline: LyricTimeline?
+        if makeTimeline {
+            onEvent?(.stage("timeline"))
+            do {
+                timeline = try AttentionTimeline.timeline(model: session.model, tokenizer: session.tokenizer, semantic: semantic, cancel: cancel)
+            } catch {
+                YuE2Debug.log("timeline skipped: \(error)")
+            }
+        }
 
         YuE2MemoryManager.configure(for: .nar)
         onEvent?(.stage("nar"))
@@ -149,8 +161,10 @@ public final class YuE2Pipeline {
         let timing = SongTiming(
             abc: plan.timing, semantic: semantic.timing, narSeconds: narSeconds,
             vaeSeconds: vaeSeconds, e2eSeconds: Date().timeIntervalSince(e2eStart))
-        return SongResult(
+        var song = SongResult(
             audio: audio, sampleRate: vae.config.sampleRate, semantic: semantic,
             latents: latents, config: config, timing: timing)
+        song.timeline = timeline
+        return song
     }
 }

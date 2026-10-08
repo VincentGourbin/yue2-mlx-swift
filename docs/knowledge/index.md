@@ -11,6 +11,8 @@ les sous-répertoires accumulent les conclusions durables.
 Mesures reproductibles (état des horloges GPU, écart ±2 %).
 - [iPhone 15 Pro Max, premier balayage (E5)](benchmarks/iphone-15-pro-max-2026-09-22.md) — AR 25 tok/s, NAR 2,6 ms/frame/éval à froid puis ×1,6 dès que `thermalState` passe à fair (≈ 60 s de charge), VAE 6 s / 41 s d'audio ; clip de 30 s réel en 273 s, pic 3,6 Go.
 - [SheetSage2 sur iPhone : mesures Mac et chiffrage](benchmarks/sheetsage2-port-estimate-2026-10-03.md) — encodeur toujours sur 300 s (4,4 s Mac), décodeur 5,5 ms/pas ; iPhone estimé ≈ 30 s pour un extrait, 1-1,5 min pour 3 min, pic ≈ 1,7 Go fp16 ; 8-11 jours, le symbolique pèse plus que le réseau.
+- [Instrumental et karaoké](benchmarks/instrumental-and-karaoke-2026-10-07.md) — transfert Vocal→Ins indispensable (0/1 sans, 6/8 avec branche négative), contrôle de fuite SheetSage2 + relance ; paroles horodatées depuis la partition et la grille SheetSage2 (81-96 % des mots à ≤ 300 ms, 98-100 % avec ancres MMS) ; puis (2026-10-08) **têtes d'alignement du LM** : mesures et mots minutés sans analyse audio (71-97 % des mots à ≤ 300 ms sur 8 chansons, robuste quand la voix quitte la partition), `generate --timeline`.
+- [Passage de relais : minutage pour l'app](handover-timeline-2026-10-08.md) — appel `AttentionTimeline.timeline` après la phase sémantique, format de `timeline.json`, ce que l'app n'a plus à faire.
 
 ## Decisions
 Choix d'architecture motivés (pourquoi telle voie, tel dtype, tel cache).
