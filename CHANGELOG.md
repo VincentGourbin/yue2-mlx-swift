@@ -2,6 +2,11 @@
 
 Published versions are squashed commits on `main` (the working history stays local); each version has a tag and a GitHub release.
 
+## 1.9.1 — 2026-10-10
+
+- **Timeline order guaranteed (ASK Q14)**: a word the score would place at or before the previous one (lyrics sung past the end of a short score, no word-head anchor) now follows it off the score instead of jumping back to its note; a syllable never ends after the next one starts (a shared melisma note made them overlap on 6 of 8 songs). `lines`, `words` and `syllables` are in lyric order with increasing starts. Word-start accuracy unchanged on the eight measured songs (indie 87 → 89 %).
+- `LyricTimeline.wordsOnScore` (share of words sung on the score's notes; under 0.9 the render did not follow its score) and `LyricTimeline.fit(abc:lyrics:language:)` (sung notes per lyric syllable of an imposed score, checked before generating: the model's own plans give 0.9–1.2).
+
 ## 1.9.0 — 2026-10-08
 
 - **Song timeline (`timeline.json`)**: the start of every score bar and beat, every sung note, every lyric line, word and syllable of a generated song, with seconds and musical position (`bar`, fractional `beat`), for a player to follow without recomputing anything. The times come from the LM itself: four AR heads attend to the score bar being played (layers/heads 6/8, 10/3, 18/7, 18/6, 0.33 s ahead) and one to the next lyric word (14/10); a teacher-forced pass over layers 0-18 reads them after the semantic phase, reusing the generation's KV cache (1-2 s on an M3 Max, identical in int4). No audio analysis, no extra model. Measured on eight songs (four generated on an iPhone in int4, EN/FR, 87-132 BPM) against an MMS forced alignment of the Demucs-separated voice: word starts 71-97 % within 300 ms (median error 59-80 ms), bars 60-160 ms from a SheetSage2 transcription; it holds where placing the score on a SheetSage2 beat grid fails (voice leaving the planned melody, 10-12 % there).

@@ -21,7 +21,8 @@ import Foundation
 /// `notes` (the sung notes, ties merged) and `lines` → `words` → `syllables`, each carrying both
 /// its seconds and its musical position (`bar` 0-based in the score, `beat` 1-based within the
 /// bar, fractional: 2.5 is the "and" of beat 2). A player binary-searches these arrays at the
-/// playback time; nothing is recomputed.
+/// playback time; nothing is recomputed. Lines, words and syllables are in lyric order with
+/// increasing starts, and a syllable never ends after the next one starts.
 public struct LyricTimeline: Codable, Equatable, Sendable {
     /// Format version of the encoded file.
     public static let formatVersion = 1
@@ -124,7 +125,20 @@ public struct LyricTimeline: Codable, Equatable, Sendable {
     public var gridOffset: Int
     /// Share of heard onsets that match the planned notes at that offset (render follows score).
     public var gridMatch: Double?
+    /// Not comparable across songs: it grows with the syllables a short score must squeeze in.
+    /// `wordsOnScore` is the measure of whether the render followed its score.
     public var alignmentCost: Double
+
+    /// Share of the timed words sung on the score's notes (nil without words). Measured
+    /// 2026-10-09: 95–100 % on eight songs that sing their lyrics on their score; on 34 seeds of
+    /// a short imposed riff, every render whose lyrics were sung later or past the score was at
+    /// most 86 %. Below 0.9 the render did not follow its score (known right after the semantic
+    /// phase, before the acoustic stages). Above it, the timing is consistent; it misses renders
+    /// that cram every line into the first bars, and says nothing about intelligibility.
+    public var wordsOnScore: Double? {
+        let words = lines.flatMap(\.words)
+        return words.isEmpty ? nil : Double(words.filter(\.onScore).count) / Double(words.count)
+    }
 
     // MARK: - Files
 
@@ -307,6 +321,15 @@ public struct LyricTimeline: Codable, Equatable, Sendable {
                 starts[w] = a
             }
         }
+        // Words keep the lyric order. A word the score would place at or before the previous one
+        // (no anchor says otherwise: the render sang on past the end of a short score) follows it.
+        for w in wordSyllables.indices.dropFirst() where sung && starts[w] <= starts[w - 1] {
+            let previous = wordSyllables[w - 1]
+            let end = offScore.contains(w - 1)
+                ? starts[w - 1] + Cost.offScoreSyllable * Double(previous.count) : spans[previous.last!].1
+            offScore.insert(w)
+            starts[w] = max(end, starts[w - 1] + 0.02)
+        }
         var lines: [Line] = []
         var w = 0
         for (li, line) in parsed.enumerated() where sung {
@@ -337,6 +360,20 @@ public struct LyricTimeline: Codable, Equatable, Sendable {
             }
             lines.append(Line(text: line.text, section: line.section, start: words.first!.start, end: words.last!.end,
                               bar: words.first!.bar, beat: words.first!.beat, words: words))
+        }
+        // Syllables never overlap: one that runs into the next (a melisma whose last note the next
+        // syllable shares) ends where the next one starts. Words and lines end with their last.
+        var next = Double.infinity
+        for l in lines.indices.reversed() {
+            for w in lines[l].words.indices.reversed() {
+                for s in lines[l].words[w].syllables.indices.reversed() {
+                    let start = lines[l].words[w].syllables[s].start
+                    lines[l].words[w].syllables[s].end = max(start, min(lines[l].words[w].syllables[s].end, next))
+                    next = start
+                }
+                lines[l].words[w].end = lines[l].words[w].syllables.last!.end
+            }
+            lines[l].end = lines[l].words.last!.end
         }
         // What the render never reaches (a song cut to length) is dropped.
         let end = duration ?? .infinity
@@ -429,6 +466,8 @@ public struct LyricTimeline: Codable, Equatable, Sendable {
         static let anchorTolerance = 0.08
         /// Beyond this distance from its anchor, a word leaves the score and follows the anchor.
         static let anchorFallback = 0.75
+        /// Length of a sung syllable off the score when nothing else times it.
+        static let offScoreSyllable = 0.2
         /// A rest of at least this many quarters separates phrases.
         static let phraseGapQuarters = 1.0
         static let maxNotesPerSyllable = 8
@@ -485,6 +524,33 @@ public struct LyricTimeline: Codable, Equatable, Sendable {
             }
         }
         return (groups, bestCost)
+    }
+
+    // MARK: - Request check
+
+    /// What an imposed score gives the lyrics to sing on, checked before generating.
+    public struct ScoreFit: Equatable, Sendable {
+        /// Lyric syllables (as the timeline counts them) and sung notes of the score's Vocal
+        /// voice (ties merged).
+        public var syllables: Int
+        public var sungNotes: Int
+        /// nil without syllables.
+        public var notesPerSyllable: Double? { syllables > 0 ? Double(sungNotes) / Double(syllables) : nil }
+    }
+
+    /// Syllables of `lyrics` against the sung notes of `abc`. Measured 2026-10-08/09: the model's
+    /// own plans give 0.9–1.2 notes per syllable (1.8 on a melismatic lullaby that rendered
+    /// well). An imposed score at 0.5 (lyrics twice as long as the score) is sung past its end,
+    /// off the score. A riff at 2.1 (16ths, rests mid-bar, under four lines) gave no intelligible
+    /// render in five transcribed seeds; the same riff cut to one note per beat (1.0), with
+    /// `% verse` / `% chorus` sections matching the lyric tags, kept its lyrics on the score in
+    /// 7 seeds out of 8, and the four transcribed sang them in order.
+    public static func fit(abc: String, lyrics: String, language: Language) throws -> ScoreFit {
+        let score = try ABCScore(abc)
+        let syllables = parseLyrics(lyrics, language: language).reduce(0) { n, line in
+            n + line.words.reduce(0) { $0 + $1.syllables.count }
+        }
+        return ScoreFit(syllables: syllables, sungNotes: ABCScore.sounding(score.vocal).count)
     }
 
     // MARK: - Lyrics

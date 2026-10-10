@@ -126,6 +126,23 @@ struct InstrumentalKaraokeTests {
         #expect(t.lines[0].words.prefix(4).allSatisfy { $0.onScore })
     }
 
+    @Test func lyricsLongerThanTheScoreStayInOrder() throws {
+        // A short score sung on past its end; the head never reaches the last two words ("se·ven": 2 × 0.2 s).
+        let t = try LyricTimeline.build(abc: score, lyrics: "[Verse]\none two three four\n[Chorus]\nfive six seven eight",
+                                        anchors: [4, 4.5, 5, 5.5, 9, 10, nil, nil])
+        let words = t.lines.flatMap(\.words)
+        #expect(words.map(\.onScore) == [true, true, true, true, false, false, false, false])
+        #expect(zip(words.suffix(2).map(\.start), [10.2, 10.6]).allSatisfy { abs($0 - $1) < 1e-9 } && t.wordsOnScore == 0.5)
+        let syllables = words.flatMap(\.syllables)
+        #expect(zip(syllables, syllables.dropFirst()).allSatisfy { $0.start < $1.start && $0.end <= $1.start })
+        #expect(syllables.allSatisfy { $0.end >= $0.start })
+    }
+
+    @Test func scoreFitCountsSyllablesAgainstSungNotes() throws {
+        let fit = try LyricTimeline.fit(abc: score, lyrics: "[Verse]\none two three\n[Chorus]\nfour five six", language: .english)
+        #expect(fit.syllables == 6 && fit.sungNotes == 5 && fit.notesPerSyllable == 5.0 / 6)
+    }
+
     @Test func inlineMeterChangesKeepEachBarsLength() throws {
         let changing = """
             X:1

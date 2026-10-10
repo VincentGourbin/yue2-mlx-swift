@@ -95,3 +95,22 @@ Expériences : `.local-runs/karaoke-probe.noindex/{attn,app,e2e-timeline}`. Pass
 - Coût de la passe d'attention sur iPhone (non mesuré ; 19 couches sur prompt + chanson, cache réutilisé).
 - Pourquoi le couplet fuit et pas le refrain (registre de la mélodie déplacée ? étiquette `[Verse]` ?).
 - Extension des fins de vers, calibrée sur un corpus plus large ; écoute par Vincent des rendus instrumentaux (`.local-runs/karaoke-probe.noindex/neg-c1.5-s*`, `e2e-instrumental`).
+
+## Reprises courtes : ordre du minutage et densité de la partition (2026-10-09, ASK Q14/Q15)
+
+**Ordre.** Sans ancre de la tête « mot » (toujours pour le dernier mot, parfois pour l'avant-dernier quand la chanson finit sans chant), un mot restait sur sa note de partition, même quand celle-ci tombait avant le mot précédent : sur « Air sifflé » (partition de 5 mesures, 45 s d'audio), « Jusqu'à demain » était daté à 10,3 s après une ligne à 26 s. Désormais, un tel mot suit le précédent hors partition, avec 0,2 s par syllabe. Une syllabe finit au plus tard au début de la suivante : 6 chansons sur 8 avaient un chevauchement, dû à une fin de mélisme partagée. Débuts de mots inchangés sur les 8 chansons (indie 87 → 89 %). Essayé et écarté : un plancher sur l'attention normalisée (ε de 0,05 à 0,5), pour que les trames sans regard sur les paroles ne décident pas du chemin. Aucun effet, car la tête ne passe jamais nettement au dernier mot.
+
+**Densité.** Reprise d'un riff instrumental de 19,5 s (`s20261008195029`) : 58 notes de `Vocal` en doubles croches et croches, silences au milieu des mesures, sous 4 vers (28 syllabes). Mac, int4-mixed + tête, fp16, phase sémantique et minutage seuls ; transcription Whisper libre pour savoir ce qui est chanté.
+
+| Partition | Graines | `wordsOnScore` ≥ 0,9 | Chant (Whisper) |
+|---|---|---|---|
+| riff, CFG 1,0 / 1,5 | 8 + 8 | 4 / 4, dont 1 / 1 qui entasse tous les vers au début | 0 sur 5 intelligible (avec 4 rendus de l'app) |
+| une note par temps, `% intro` | 8 | 2 : couplet en place 8 fois, refrain après la partition 6 fois | 1 sur 1 dans l'ordre |
+| une note par temps, `% verse` / `% chorus` | 8 | 7 (dont 1 coupé à 10 s) | 4 sur 4 dans l'ordre |
+
+Ce qui ressort :
+- Les plans du modèle donnent 0,9 à 1,2 note par syllabe (1,8 sur une berceuse mélismatique réussie) et ne respectent pas eux-mêmes les noms de sections des paroles (`% intro` ajouté, `% pre-chorus` inventé, `[Bridge]` → `% outro`).
+- Renommer les sections n'aide qu'une fois la densité corrigée.
+- `wordsOnScore` attrape les paroles chantées plus loin ou après la partition. Il ne voit ni un rendu qui entasse tous les vers au début, ni un chant inintelligible sur la bonne mesure : deux rendus « justes » au minutage étaient muets ou incompréhensibles pour Whisper.
+
+Expériences : scratchpad de session `q15/sweep/` ; écoutes dans `~/Desktop/PocketAnthem-ecoute/2026-10-09-riff-simplifie/`.
