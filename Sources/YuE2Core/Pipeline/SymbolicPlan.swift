@@ -7,6 +7,7 @@ import Foundation
 /// The planner's output: the request, the ABC score (if any), its tokenized ids, the resulting
 /// AR prefix, and — when the ABC phase actually ran — its timing/truncation. Mirrors
 /// `SymbolicPlan` in `pipeline.py`, including its save/load round trip and tamper detection.
+/// `plan.json` also carries the score's `layout` (ASK Q16), which `pipeline.py` ignores.
 public struct SymbolicPlan: Codable, Equatable {
     public let request: SongRequest
     public let abc: String?
@@ -14,6 +15,9 @@ public struct SymbolicPlan: Codable, Equatable {
     public let prefix: [Int]
     public let timing: GenerationTiming?
     public let truncated: Bool
+    /// Sections, first and last sung bar, nominal seconds of `abc`; `nil` without a score or
+    /// when it does not parse.
+    public let layout: ABCScore.Layout?
 
     public init(
         request: SongRequest, abc: String?, abcIDs: [Int], prefix: [Int],
@@ -25,12 +29,23 @@ public struct SymbolicPlan: Codable, Equatable {
         self.prefix = prefix
         self.timing = timing
         self.truncated = truncated
+        self.layout = abc.flatMap(ABCScore.layout(of:))
     }
 
     private enum CodingKeys: String, CodingKey {
         case request, abc
         case abcIDs = "abc_ids"
-        case prefix, timing, truncated
+        case prefix, timing, truncated, layout
+    }
+
+    /// `layout` is derived data: always recomputed from the score, so plans saved before it existed get one.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            request: try c.decode(SongRequest.self, forKey: .request), abc: try c.decodeIfPresent(String.self, forKey: .abc),
+            abcIDs: try c.decode([Int].self, forKey: .abcIDs), prefix: try c.decode([Int].self, forKey: .prefix),
+            timing: try c.decodeIfPresent(GenerationTiming.self, forKey: .timing),
+            truncated: try c.decode(Bool.self, forKey: .truncated))
     }
 
     private static let requiredArtifacts: Set<String> = ["plan.json", "abc_tokens.npy", "prefix.npy"]

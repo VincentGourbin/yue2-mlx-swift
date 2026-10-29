@@ -2,6 +2,13 @@
 
 Published versions are squashed commits on `main` (the working history stays local); each version has a tag and a GitHub release.
 
+## 1.10.0 — 2026-10-29
+
+- **Where a plan sings (ASK Q16)**: the prompt carries no duration, so the planner alone decides the instrumental lead-in (0 to 57 bars on one 128 BPM request, median 18) and the song's length (26 to 220 bars); a `% intro` never carries the voice and `[Intro]` lyrics are sung in the next section. `ABCScore.Layout` (`ABCScore.layout`, `ABCScore.layout(of:)`, also tolerant of a plan cut by the ABC token cap) gives the sections with their bars and sung notes, `firstSungBar` / `firstSungSeconds`, `lastSungBar` / `lastSungEndSeconds`, `bars` and nominal `seconds`; every `plan.json` now carries it as `layout` (`SymbolicPlan.layout`, recomputed for plans saved before; `pipeline.py` ignores the key).
+- `ABCScore.trimming(_:leadIn:tail:)`: keeps at most N bars before the voice's first group and after its last one by dropping whole `V: Vocal`/`V: Ins` groups as written (no bar re-spelled, groups with inline fields or uneven voices never dropped); render the result as an imposed score.
+- CLI: `yue2 score --abc <plan dir | file.abc> [--lead-in N] [--tail N] [--out short.abc]` (no weights).
+- **One short phrase under several texts (ASK Q17 b)**: documented as outside the model's contract — an identical melody calls the same text, and re-spelling its notation changes nothing. Measured levers, safest first: one sung block, a different melody per text, plus lyrics-only guidance (`--cfg-scale 1.5 --negative-style` set to the request's own style; doubles the semantic phase). No code change.
+
 ## 1.9.1 — 2026-10-10
 
 - **Timeline order guaranteed (ASK Q14)**: a word the score would place at or before the previous one (lyrics sung past the end of a short score, no word-head anchor) now follows it off the score instead of jumping back to its note; a syllable never ends after the next one starts (a shared melisma note made them overlap on 6 of 8 songs). `lines`, `words` and `syllables` are in lyric order with increasing starts. Word-start accuracy unchanged on the eight measured songs (indie 87 → 89 %).

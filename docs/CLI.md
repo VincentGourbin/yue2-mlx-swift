@@ -18,6 +18,7 @@ Binary produced by `xcodebuild -scheme yue2 -configuration Release -destination 
 | `melody` | hummed or sung recording → ABC score the model takes as its plan |
 | `transcribe` | mixed recording → ABC score (SheetSage2 port), for covers with `cot melody` |
 | `karaoke` | times the score bars, sung notes and lyrics of a saved song (`timeline.json`) |
+| `score` | where a score sings (sections, first and last sung bar, nominal seconds); shortens its instrumental lead-in and tail |
 | `vary` | variation of a saved song (same score and tokens, SDEdit on its latents) |
 | `regenerate` | keeps a saved song up to a point in time, regenerates the rest |
 | `parity vae|lm|nar` | numerical parity against the PyTorch dumps |
@@ -58,7 +59,7 @@ The request file: `style`, `lyrics` (`[Verse]`, `[Chorus]`, `[Bridge]`, `[Outro]
 | `--timeline` | off | writes `timeline.json`: bars, sung notes and lyrics timed on the audio ([Timing](#timing-timelinejson---timeline-karaoke)) |
 | `--instrumental` | off | song without a voice ([Instrumental](#instrumental---instrumental)) |
 | `--instrumental-retries` | 2 | with `--instrumental`: renders on the next seeds when SheetSage2 hears a voice; 0 skips the check |
-| `--negative-style` | — | EXPERIMENTAL: tags for the negative CFG branch (`[Tags]` of that branch instead of the bare instruction); only acts when `--cfg-scale` ≠ 1 |
+| `--negative-style` | — | EXPERIMENTAL: tags for the negative CFG branch (`[Tags]` of that branch instead of the bare instruction); only acts when `--cfg-scale` ≠ 1. Set to the request's own style, the guidance acts on the lyrics alone (ASK Q17: brings back the words of a verse sung to a repeated melody more often, not reliably; doubles the semantic phase) |
 
 Artifacts in `--out`: `score.abc`, `abc_tokens.npy`, `prefix.npy`, `semantic.npy`, `latent.npy`, `audio.wav`, `plan.json`, `request.json`, `config.json`, `result.json` (times and hashes), `trace.json` with `--profile`, `timeline.json` with `--timeline`, `planned.abc` and `instrumental.json` with `--instrumental`.
 
@@ -74,6 +75,19 @@ yue2 decode     --latents run/song/latent.npy --out run/song/audio.wav --precisi
 `synthesize --checkpoint-dir` writes `nar-checkpoint.json` and `nar-state.npy` (192 KB) after every ODE step and clears them at the end; `--resume` restarts from the saved step, bit-exact with an uninterrupted solve (same plan, tokens, seed and steps). This is what makes losing the GPU (iOS in the background, a crash) harmless: one step lost, not the stage.
 
 `decode` prints a line `DECODE backend=… tiles=… padded_tiles=… seconds=… footprint_before_load_mb=… footprint_after_load_mb=… footprint_decode_peak_mb=… mlx_decode_peak_mb=…`.
+
+## Where a score sings: `score` (lead-in, tail, length)
+
+The prompt carries no duration: the planner alone decides how long the instrumental intro is and how long the song runs. On one 128 BPM techno request (ASK Q16, 50 plans in the iPhone's int4 setting) the voice entered after 0 to 57 bars (median ≈ 18, i.e. 34 s) and plans ran 26 to 220 bars; a `% intro` section never carried a sung note, `[Intro]` lyrics are sung in the next section, a "short intro" style tag changes nothing. A cap computed from the lyrics alone can therefore cut a song before its first line.
+
+```bash
+yue2 score --abc run/plan                                    # layout JSON (plan dir or .abc file)
+yue2 score --abc run/plan --lead-in 4 --tail 4 --out short.abc
+yue2 generate --request song.json --abc-file short.abc --out run/short
+```
+
+- The layout (`ABCScore.Layout`, also written as `layout` in every `plan.json`): sections with their first bar, bar count and sung notes, `firstSungBar` / `firstSungSeconds`, `lastSungBar` / `lastSungEndSeconds`, `bars`, `seconds`. Seconds are nominal (header `Q:` from bar 1); on six renders the voice entered at most 0.1 s after `firstSungSeconds` (once 5 s before) and the song lasted −2.4 to +3.6 s from `seconds`: cap at `seconds` + 5 s.
+- `--lead-in N` / `--tail N` (`ABCScore.trimming(_:leadIn:tail:)`) keep at most N bars before the voice's first group and after its last one, dropping whole `V: Vocal`/`V: Ins` groups as written (no bar re-spelled; the lead-in keeps the groups leading into the voice). The planner writes 4-bar groups, so `--lead-in 4` leaves a 1-4 bar intro. Groups with an inline field or with voices of different lengths are never dropped. Render the result as an imposed score: the four shortened plans rendered sang all six lines in order (the iPhone's plan, one line within its 45 s cap as planned, sang six in 60 s). Forcing the opening section instead (`--abc-prefix-file` ending on `% chorus`) makes the voice enter at bar 1-3 but the planner then writes fewer sung notes (one render in two lost a verse).
 
 ## `download`, `info`
 
