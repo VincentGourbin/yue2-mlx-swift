@@ -34,6 +34,42 @@ extension VAEDecoding {
 
 extension YuE2VAE: VAEDecoding {}
 
+/// Issue #4: MLX's fp16 `convTransposed1d` emits non-finite outputs for particular decode
+/// window shapes (a 704...1280 core-frame band was measured on one M5 / MLX 0.31.6 host).
+/// Rather than hard-coding that host-specific band into the general decode path, `decodeTiled`
+/// detects a non-finite **crop** and re-decodes all tiles at half the core size. Halving changes
+/// no sample on a clean window — the halo already supplies each crop's full dependency support,
+/// which is why `decodeTiled` output is bit-for-bit independent of `coreFrames`. The clean path
+/// therefore costs only one finiteness reduction per tile, with no extra decode and no extra
+/// memory; only a genuinely bad shape pays for a second pass. Retries stop here: a non-finite
+/// result at that size comes from the data (e.g. an fp16-overflowing latent), not from a kernel
+/// shape, and is left to the exporter's non-finite sanitisation.
+public let vaeMinRetryCoreFrames = 64
+
+/// Whether an already-materialised crop is entirely finite. Checking the crop (not the full
+/// tile) matters: NaNs confined to the halo are discarded by the crop and never reach the WAV.
+/// Issue #4 instrumentation showed that forcing materialisation *inside* the decoder can change
+/// which window produces NaNs, so this reduction is deliberately done after `eval(crop)`.
+public func vaeCropIsFinite(_ crop: MLXArray) -> Bool {
+    MLX.all(MLX.isFinite(crop)).item(Bool.self)
+}
+
+/// One step of the issue #4 retry policy: `nil` means the current pass is final. Pure and
+/// backend-independent so both `decodeTiled` entry points (and their tests) share one decision.
+public func nextVAECoreFrames(current: Int, foundNonFinite: Bool) -> Int? {
+    guard foundNonFinite, current > vaeMinRetryCoreFrames else { return nil }
+    return max(vaeMinRetryCoreFrames, current / 2)
+}
+
+/// A fallback is rare (only a bad kernel shape) and otherwise invisible, so report it on stderr
+/// instead of hiding it behind `YUE2_DEBUG`. Enabling `YUE2_DEBUG` also turns on debug-only
+/// `isFinite` assertions inside `SnakeBeta`, which trap before the crop is ever checked — the
+/// reason verification runs without it.
+public func logVAETileRetry(from current: Int, to next: Int) {
+    FileHandle.standardError.write(
+        Data("yue2: non-finite VAE tile at \(current) core frames; re-decoding at \(next)\n".utf8))
+}
+
 /// One tile of a tiled decode: the latent window `[windowStart, windowEnd)` handed to the
 /// backend and the core `[coreStart, coreEnd)` whose output is kept. `paddedFrames` is what the
 /// backend will still have to zero-pad (only when the whole signal is shorter than the smallest
@@ -103,21 +139,41 @@ public func decodeTiled(
     let frames = z.dim(1)
     let ratio = backend.config.downsamplingRatio
     let total = backend.naturalOutputLength(frames: frames)
-    let windows = planVAETiles(
-        frames: frames, coreFrames: coreFrames, haloFrames: haloFrames,
-        enumerated: backend.enumeratedFrameCounts)
 
+    // Issue #4: if a window lands on an fp16 `convTransposed1d` shape that emits NaNs, discard
+    // the whole pass and re-decode at half the core size. Every backend goes through this path,
+    // including callers that request an explicit `--vae-core-frames` / `--core-frames`.
+    var effectiveCore = coreFrames
     var crops: [MLXArray] = []
-    for (index, window) in windows.enumerated() {
-        YuE2GPUGate.shared.wait()
-        let tile = try await backend.decode(z[0..., window.windowStart..<window.windowEnd, 0...])
-        let outStart = window.coreStart * ratio
-        let outEnd = min(window.coreEnd * ratio, total)
-        let cropStart = (window.coreStart - window.windowStart) * ratio
-        let crop = tile[0..., cropStart..<(cropStart + outEnd - outStart), 0...]
-        eval(crop)
-        crops.append(crop)
-        onProgress?(index + 1, windows.count)
+    while true {
+        // At the minimum tile a non-finite result is data-side, not shape-side: keep those crops
+        // (the exporter sanitises them) instead of retrying forever.
+        let finalPass = effectiveCore <= vaeMinRetryCoreFrames
+        crops.removeAll(keepingCapacity: true)
+        let windows = planVAETiles(
+            frames: frames, coreFrames: effectiveCore, haloFrames: haloFrames,
+            enumerated: backend.enumeratedFrameCounts)
+        var foundNonFinite = false
+        for (index, window) in windows.enumerated() {
+            YuE2GPUGate.shared.wait()
+            let tile = try await backend.decode(z[0..., window.windowStart..<window.windowEnd, 0...])
+            let outStart = window.coreStart * ratio
+            let outEnd = min(window.coreEnd * ratio, total)
+            let cropStart = (window.coreStart - window.windowStart) * ratio
+            let crop = tile[0..., cropStart..<(cropStart + outEnd - outStart), 0...]
+            eval(crop)
+            if !finalPass, !vaeCropIsFinite(crop) {
+                foundNonFinite = true
+                break
+            }
+            crops.append(crop)
+            onProgress?(index + 1, windows.count)
+        }
+        guard let next = nextVAECoreFrames(current: effectiveCore, foundNonFinite: foundNonFinite) else {
+            break
+        }
+        logVAETileRetry(from: effectiveCore, to: next)
+        effectiveCore = next
     }
     let audio = concatenated(crops, axis: 1)
     eval(audio)

@@ -51,6 +51,32 @@ private struct EnumeratedBackend: VAEDecoding {
     }
 }
 
+/// Issue #4 stand-in for MLX's shape-dependent fp16 `convTransposed1d`: decode windows above
+/// `badWindowFrames` return a NaN in the middle of the output (so it survives the halo crop),
+/// smaller windows return clean silence. Records every window it is asked to decode.
+private final class ShapeSensitiveBackend: VAEDecoding {
+    let config: VAEConfig
+    let badWindowFrames: Int
+    private(set) var seenWindows: [Int] = []
+
+    init(config: VAEConfig, badWindowFrames: Int) {
+        self.config = config
+        self.badWindowFrames = badWindowFrames
+    }
+
+    func decode(_ z: MLXArray) async throws -> MLXArray {
+        let t = z.dim(1)
+        seenWindows.append(t)
+        let length = naturalOutputLength(frames: t)
+        let midpoint = length / 2
+        let bad = t > badWindowFrames
+        let head = MLXArray.zeros([1, midpoint, 1], dtype: .float32)
+        let spike = MLXArray([bad ? Float.nan : Float(0)], [1, 1, 1])
+        let tail = MLXArray.zeros([1, length - midpoint - 1, 1], dtype: .float32)
+        return concatenated([head, spike, tail], axis: 1)
+    }
+}
+
 @Suite("VAETiling")
 struct VAETilingTests {
     /// Every window covers its core plus at least the halo on each side (except at the signal
@@ -126,6 +152,70 @@ struct VAETilingTests {
         let viaProtocol = try await decodeTiled(using: vae, z, coreFrames: c.core, haloFrames: 16)
         let direct = try vae.decodeTiled(z, coreFrames: c.core, haloFrames: 16)
         #expect(MLX.all(viaProtocol .== direct).item(Bool.self))
+    }
+
+    /// Issue #4: the retry policy halves an offending tile and stops at 64 core frames. A clean
+    /// pass, or one at the minimum tile, is final (data-side NaNs are left to the exporter).
+    @Test func nonFiniteTileRetryPolicyHalvesAndStopsAtMinimum() {
+        #expect(nextVAECoreFrames(current: 1024, foundNonFinite: true) == 512)
+        #expect(nextVAECoreFrames(current: 512, foundNonFinite: true) == 256)
+        #expect(nextVAECoreFrames(current: 128, foundNonFinite: true) == 64)
+        #expect(nextVAECoreFrames(current: 64, foundNonFinite: true) == nil)
+        #expect(nextVAECoreFrames(current: 1024, foundNonFinite: false) == nil)
+        #expect(nextVAECoreFrames(current: 1, foundNonFinite: true) == nil)
+    }
+
+    /// Issue #4 end to end through the package-level entry point: a backend that mimics the
+    /// shape-dependent fp16 NaN (bad above 700 frames) must be re-decoded at half the tile, and
+    /// the returned audio must contain no non-finite sample — including callers that explicitly
+    /// request `--vae-core-frames 1024` / `--core-frames 1024`.
+    @Test func decodeTiledRetriesNonFiniteWindowsAtHalfTheTile() async throws {
+        let dir = try makeTinyModelDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let config = try VAEConfig.load(from: dir.appendingPathComponent("config.json"))
+        let backend = ShapeSensitiveBackend(config: config, badWindowFrames: 700)
+        let z = MLXArray.zeros([1, 1400, config.latentDim], dtype: .float32)
+
+        let audio = try await decodeTiled(using: backend, z, coreFrames: 1024, haloFrames: 16)
+        let expectedLength = config.downsamplingRatio * 1400 - 64
+        #expect(audio.shape == [1, expectedLength, 1])
+        #expect(vaeCropIsFinite(audio))
+        // Pass 1 asks for one 1040-frame window (bad) and aborts; pass 2 uses 512-frame cores
+        // whose windows (528 / 544 / 392 frames) are all below the bad band.
+        #expect(backend.seenWindows.first == 1040)
+        #expect(backend.seenWindows.count == 4)
+        #expect(backend.seenWindows.dropFirst().allSatisfy { $0 <= 700 })
+    }
+
+    /// The same shape with a clean backend must take exactly one pass (no extra decode, no
+    /// extra memory): the finiteness reduction is the only added work.
+    @Test func decodeTiledDoesNotRetryCleanWindows() async throws {
+        let dir = try makeTinyModelDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let config = try VAEConfig.load(from: dir.appendingPathComponent("config.json"))
+        let backend = ShapeSensitiveBackend(config: config, badWindowFrames: Int.max)
+        let z = MLXArray.zeros([1, 1400, config.latentDim], dtype: .float32)
+
+        let audio = try await decodeTiled(using: backend, z, coreFrames: 1024, haloFrames: 16)
+        #expect(backend.seenWindows == [1040, 392])
+        #expect(vaeCropIsFinite(audio))
+    }
+
+    /// Both decode entry points (`decodeTiled(using:)` and `YuE2VAE.decodeTiled`) keep their
+    /// bit-for-bit independence of `coreFrames` with the retry guard in place. The second one
+    /// is the path used by `synthesize` / `remix` / `encode` / `parity`.
+    @Test func bothDecodeEntryPointsStillAgreeAcrossTileSizes() async throws {
+        let dir = try makeTinyModelDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let vae = try YuE2VAE.load(directory: dir)
+        let z = MLXArray.zeros([1, 1300, vae.config.latentDim], dtype: .float32)
+
+        let viaProtocol = try await decodeTiled(using: vae, z, coreFrames: 1024)
+        let direct = try vae.decodeTiled(z, coreFrames: 1024)
+        let smaller = try vae.decodeTiled(z, coreFrames: 640)
+        #expect(MLX.all(viaProtocol .== direct).item(Bool.self))
+        #expect(MLX.all(smaller .== direct).item(Bool.self))
+        #expect(vaeCropIsFinite(direct))
     }
 
     /// Issue #4: fp16 `convTransposed1d` emits NaNs for decode windows in roughly the

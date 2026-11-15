@@ -65,12 +65,15 @@ public struct YuE2ReferenceProfile: Sendable, Identifiable, Equatable {
         all.first { $0.id == id }
     }
 
-    /// `fast` profiles use a 640-frame VAE tile instead of 1024: MLX's fp16
+    /// `fast` profiles default to a 640-frame VAE tile instead of 1024: MLX's fp16
     /// `convTransposed1d` produces NaNs for decode windows in roughly the 704...1280-frame
     /// band (issue #4, measured on M5 / macOS 27.2.1). `decodeTiled` output is bit-for-bit
     /// independent of `coreFrames`, so 640 changes no sample and costs no extra time
     /// (1.98 -> 1.99 s) or memory (2871 -> 2799 MB). `lean` / `tiny` were always safe at
-    /// 256 / 64. Keep every fp16 profile at or below 640; see VAETilingTests.
+    /// 256 / 64. This is a safe default, not the only defence: both `decodeTiled` entry points
+    /// now detect a non-finite crop and re-decode at half the tile size, so explicit
+    /// `--vae-core-frames` / `--core-frames` values and future MLX builds are covered too
+    /// (see `nextVAECoreFrames`). Keep every fp16 profile at or below 640; see VAETilingTests.
     public static let all: [YuE2ReferenceProfile] = [
         YuE2ReferenceProfile(
             bits: .four, kind: .fast, quant: .int4Mixed, quantizeHead: true, precision: .bf16,
