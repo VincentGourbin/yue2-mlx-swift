@@ -65,10 +65,19 @@ public struct YuE2ReferenceProfile: Sendable, Identifiable, Equatable {
         all.first { $0.id == id }
     }
 
+    /// `fast` profiles default to a 640-frame VAE tile instead of 1024: MLX's fp16
+    /// `convTransposed1d` produces NaNs for decode windows in roughly the 704...1280-frame
+    /// band (issue #4, measured on M5 / macOS 27.2.1). `decodeTiled` output is bit-for-bit
+    /// independent of `coreFrames`, so 640 changes no sample and costs no extra time
+    /// (1.98 -> 1.99 s) or memory (2871 -> 2799 MB). `lean` / `tiny` were always safe at
+    /// 256 / 64. This is a safe default, not the only defence: both `decodeTiled` entry points
+    /// now detect a non-finite crop and re-decode at half the tile size, so explicit
+    /// `--vae-core-frames` / `--core-frames` values and future MLX builds are covered too
+    /// (see `nextVAECoreFrames`). Keep every fp16 profile at or below 640; see VAETilingTests.
     public static let all: [YuE2ReferenceProfile] = [
         YuE2ReferenceProfile(
             bits: .four, kind: .fast, quant: .int4Mixed, quantizeHead: true, precision: .bf16,
-            narCompute: .dequantized, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 1024,
+            narCompute: .dequantized, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 640,
             releaseWeightsBetweenStages: false, memoryProfile: .mac, odeSteps: nil,
             summary: "int4-mixed-head pack (2.5 GB), everything resident, NAR dequantized to bf16 for the solve"),
         YuE2ReferenceProfile(
@@ -84,7 +93,7 @@ public struct YuE2ReferenceProfile: Sendable, Identifiable, Equatable {
             summary: "int4-mixed-head pack, 4bit-lean plus a 64-frame VAE tile and a 256 MB cache: ≈ 2.6 GB peak for +29 % time, same audio — the most constrained devices"),
         YuE2ReferenceProfile(
             bits: .eight, kind: .fast, quant: .qint8All, quantizeHead: true, precision: .bf16,
-            narCompute: .dequantized, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 1024,
+            narCompute: .dequantized, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 640,
             releaseWeightsBetweenStages: false, memoryProfile: .mac, odeSteps: nil,
             summary: "qint8-all-head pack (3.5 GB), everything resident, NAR dequantized to bf16"),
         YuE2ReferenceProfile(
@@ -94,7 +103,7 @@ public struct YuE2ReferenceProfile: Sendable, Identifiable, Equatable {
             summary: "qint8-all-head pack, stage-scoped residency, packed NAR, fp16, VAE tile 256, mobile limits"),
         YuE2ReferenceProfile(
             bits: .sixteen, kind: .fast, quant: .none, quantizeHead: false, precision: .bf16,
-            narCompute: .packed, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 1024,
+            narCompute: .packed, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 640,
             releaseWeightsBetweenStages: false, memoryProfile: .mac, odeSteps: nil,
             summary: "bf16 checkpoint (7.3 GB), everything resident, Mac caches"),
         YuE2ReferenceProfile(

@@ -35,7 +35,17 @@ public enum AudioExporter {
         let clamped = MLX.clip(samples, min: -1.0, max: 1.0).asType(.float32)
         let interleaved = clamped.transposed(1, 0).reshaped([-1]) // [L0, R0, L1, R1, ...]
         MLX.eval(interleaved)
-        let floatSamples = interleaved.asArray(Float.self)
+        var floatSamples = interleaved.asArray(Float.self)
+
+        // `MLX.clip` propagates NaN/Inf, so sanitise once before either branch: the Int32
+        // conversion below traps on a non-finite value, and the float32 branch would otherwise
+        // write the NaN bit pattern straight into the WAV. Replacing with silence keeps a
+        // degraded take recoverable instead of losing the whole render in saveArtifacts.
+        var nonFiniteCount = 0
+        for index in floatSamples.indices where !floatSamples[index].isFinite {
+            floatSamples[index] = 0
+            nonFiniteCount += 1
+        }
 
         let bitsPerSample: UInt16
         let audioFormatCode: UInt16
@@ -86,6 +96,9 @@ public enum AudioExporter {
         file.append(payload)
         try file.write(to: url)
 
+        if nonFiniteCount > 0 {
+            YuE2Debug.log("Exported WAV: replaced \(nonFiniteCount) non-finite samples with silence -> \(url.path)")
+        }
         YuE2Debug.log("Exported WAV: \(channels)ch, \(sampleRate)Hz, \(numFrames) frames, \(file.count) bytes -> \(url.path)")
     }
 
