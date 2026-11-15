@@ -127,4 +127,18 @@ struct VAETilingTests {
         let direct = try vae.decodeTiled(z, coreFrames: c.core, haloFrames: 16)
         #expect(MLX.all(viaProtocol .== direct).item(Bool.self))
     }
+
+    /// Issue #4: fp16 `convTransposed1d` emits NaNs for decode windows in roughly the
+    /// 704...1280-frame band. `decodeTiled` output is bit-for-bit independent of
+    /// `coreFrames`, so keeping fp16 profiles at <= 640 costs no accuracy, time or memory.
+    @Test func fp16ProfilesStayBelowUnsafeVAETileBand() {
+        let fp16Profiles = YuE2ReferenceProfile.all.filter { $0.vaePrecision == .fp16 }
+        #expect(fp16Profiles.count == 7, "expected all seven reference profiles to use the fp16 VAE")
+        for profile in fp16Profiles {
+            #expect(
+                profile.vaeCoreFrames <= 640,
+                "\(profile.id) uses \(profile.vaeCoreFrames)-frame fp16 VAE tiles; see issue #4"
+            )
+        }
+    }
 }
