@@ -25,10 +25,31 @@ profile.applyGlobalPolicy()
 |---|---|---|---|
 | Plan (ABC) | `Planner.plan(request:)` | AR path + embeddings + head | `plan.json`, `score.abc` |
 | Semantic | `SemanticGenerator.generateSemantic(plan:)` | same | `semantic.npy` (+ KV cache in memory when stage 3 follows) |
-| NAR | `Synthesizer.synthesize(prefix:codec:seed:reuseCache:onBeforeChunk:resume:onStep:)` | NAR path (AR released once the cache is ready) | `latent.npy`; `nar-checkpoint.json` + `nar-state.npy` every step |
+| NAR | `Synthesizer.synthesize(prefix:codec:seed:reuseCache:onBeforeChunk:resume:onStep:)` | NAR path (AR released once the cache is ready) | `latent.npy`; `nar-state-<chunk>-<step>-<id>.npy` (+ `nar-velocity-…` under AB2) committed by `nar-checkpoint.json` every step |
 | VAE | `decodeTiled(using: vae, latents, coreFrames: 256)` | nothing from the LM | `audio.wav` |
 
 The simplest remains `YuE2Pipeline` with the mobile-profile defaults; persist `onNARStep` in the song's folder, resume with `narResume`, reload one `ModelSession` per song.
+
+## Draft NAR (`quality: .draft`)
+
+`profile.generationConfig(base, quality: .draft)` returns the profile's config with the NAR on AB2 at `YuE2ReferenceProfile.draftODESteps` (8) steps: 9 network calls instead of 33 (64 before AB2). The plan, the semantic tokens, the VAE and the peak memory are the same as the full render; only the latents change. Pass the config to `YuE2Pipeline` or `Synthesizer` as usual. The CLI equivalent is `generate --draft` and `synthesize --draft`.
+
+Edits that re-impose frames at every step (`regenerate`, `.keep`) fall back to midpoint, so a draft edit costs 16 calls; it has not been auditioned.
+
+Measured on « Wrinkles and Rain » (251 s, plan and tokens from the iPhone, replayed on the Mac, 2026-11-22). Vincent judged the draft good by ear in 4, 8 and 16 bits.
+
+| | 4 bits | 8 bits | 16 bits |
+|---|---|---|---|
+| NAR, full (AB2-32) / draft (AB2-8), Mac | 233 / 54 s | 202 / 53 s | 177 / 49 s |
+| Latent distance from midpoint-32: AB2-32 / draft | 0.040 / 0.114 | 0.029 / 0.105 | 0.031 / 0.111 |
+
+For scale, swapping 8-bit weights for 4-bit ones at midpoint-32 moves the latents by 0.094. On the iPhone, at 57.7 s per evaluation (8 bits, 251 s song), the draft NAR is about 9 min, against about 32 min for AB2-32 and 61.5 min measured for midpoint-32. The plan and semantic stages, about 19 min there, are then most of the time.
+
+For the app:
+
+- **Store the quality with the song and resume with the same one.** A NAR checkpoint records its steps and integrator. Resuming it under another schedule throws `invalidRequest` (« does not match this solve »); it never mixes the two.
+- **To turn a draft into the full render, keep `semantic.npy`.** Clear the song's NAR checkpoint (`NARCheckpoint.clear(in:)`), then solve and decode again with `quality: .full`; plan and semantic stay as they are. The full render costs its whole NAR time again: the draft's latents cannot seed it.
+- **`.draft` ignores `base.odeSteps`.** A user step setting only applies to `.full`.
 
 ## Losing the GPU in the background
 

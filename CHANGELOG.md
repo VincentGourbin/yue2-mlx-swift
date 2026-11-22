@@ -2,6 +2,14 @@
 
 Published versions are squashed commits on `main` (the working history stays local); each version has a tag and a GitHub release.
 
+## 1.11.0 — 2026-11-22
+
+- **AB2 NAR integrator on every reference profile**: Adams–Bashforth 2 (`ODEMethod.ab2`, `--ode-method ab2`) costs steps + 1 network calls instead of 2 × steps (33 instead of 64 at 32 steps), bootstrapped by one midpoint step; edits that re-impose frames (`.keep`, regenerate) fall back to midpoint. Judged identical by ear to midpoint in bf16 and in the fp16 packed iPhone profile. NAR −49 % on an M3 Max (52.6 → 27.0 s, bf16, 70 s song); on an iPhone 15 Pro Max 3.8 s of NAR per second of music instead of 7.5–8.6, pause/kill/resume unchanged. `GenerationConfig.odeMethod` (`"midpoint"` stays the checkpoint default), `ODEMethod.evaluations(steps:startStep:)` for time estimates.
+- **Draft NAR**: `YuE2ReferenceProfile.generationConfig(_:quality: .draft)` (`generate --draft`, `synthesize --draft`) solves at AB2 8 steps (`draftODESteps`, 9 calls): 8–10× less NAR time than the full render at the same peak memory, same plan, semantic tokens and VAE; judged good by ear in 4, 8 and 16 bits on a 251 s song. Upgrading a draft means solving the same `semantic.npy` again with `.full`. See docs/iOS.md, « Draft NAR ».
+- `YuE2ReferenceProfile.generationConfig(_:)`: the one place that applies a profile's NAR schedule (method, pinned steps); edits under `--reference` now use it too.
+- **NAR checkpoint commits through its JSON**: each save writes `nar-state-<chunk>-<step>-<id>.npy` (+ `nar-velocity-…` under AB2) then `nar-checkpoint.json` atomically, which names them; a save killed halfway leaves the previous step loadable. The checkpoint records its integrator and steps, and a resume under another schedule throws instead of mixing them. Checkpoints written by 1.10.0 (fixed `nar-state.npy`) still load.
+- mlx-swift stays pinned at 0.31.6: 0.33.0 measured neutral on speed and memory (NAR latents bit-identical), not adopted.
+
 ## 1.10.0 — 2026-10-29
 
 - **Where a plan sings (ASK Q16)**: the prompt carries no duration, so the planner alone decides the instrumental lead-in (0 to 57 bars on one 128 BPM request, median 18) and the song's length (26 to 220 bars); a `% intro` never carries the voice and `[Intro]` lyrics are sung in the next section. `ABCScore.Layout` (`ABCScore.layout`, `ABCScore.layout(of:)`, also tolerant of a plan cut by the ABC token cap) gives the sections with their bars and sung notes, `firstSungBar` / `firstSungSeconds`, `lastSungBar` / `lastSungEndSeconds`, `bars` and nominal `seconds`; every `plan.json` now carries it as `layout` (`SymbolicPlan.layout`, recomputed for plans saved before; `pipeline.py` ignores the key).

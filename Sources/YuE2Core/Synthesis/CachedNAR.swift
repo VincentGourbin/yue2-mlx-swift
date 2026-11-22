@@ -71,11 +71,15 @@ public final class CachedNAR {
         return out[0, 1..<(narLength - 1), 0...]
     }
 
-    /// Midpoint ODE solve from `t = 1` (pure noise) to `t = 0` (data), in `steps` steps, entirely
+    /// ODE solve (midpoint, or AB2 under `method: .ab2`) from `t = 1` (pure noise) to `t = 0` (data), in `steps` steps, entirely
     /// in the model's compute dtype (bf16 in real weights, fp32 in tiny — pitfall #5: casting up
     /// mid-solve instead of only at the very end is a different, wrong trajectory). `raw = logit(t)`
     /// is computed in `Double`, clamped to `±20` (`logit(1) = +∞ → 20`, pitfall #4).
-    /// `onVelocityCall`, when given, fires once per `velocity` call (2 per step) — for tests that
+    /// `method: .ab2` (Adams–Bashforth 2, `ODEMethod`) takes a midpoint first step, then one
+    /// evaluation per step; `previousVelocity` (from a checkpoint) lets a resumed AB2 solve skip
+    /// that bootstrap and continue bit-for-bit — without it the resumed solve bootstraps again
+    /// (valid, not identical). `onStep` hands the velocity AB2 will reuse (`nil` for midpoint).
+    /// `onVelocityCall`, when given, fires once per `velocity` call (2 per step under midpoint, steps + 1 per solve under AB2) — for tests that
     /// need to count evaluations without instrumenting `velocity` itself.
     ///
     /// `initialState`/`startStep` (default: pure noise from `step 0`, i.e. ordinary generation)
@@ -91,8 +95,10 @@ public final class CachedNAR {
         onProgress: ((Int, Int) -> Void)? = nil,
         cancel: (() -> Bool)? = nil,
         onVelocityCall: (() -> Void)? = nil,
-        onStep: ((_ completedStep: Int, _ state: MLXArray) -> Void)? = nil,
-        keep: (frames: Int, latents: MLXArray)? = nil
+        onStep: ((_ completedStep: Int, _ state: MLXArray, _ previousVelocity: MLXArray?) -> Void)? = nil,
+        keep: (frames: Int, latents: MLXArray)? = nil,
+        method: ODEMethod = .midpoint,
+        previousVelocity: MLXArray? = nil
     ) throws -> MLXArray {
         guard steps >= 1 else {
             throw YuE2Error.invalidRequest("steps must be a positive integer")
@@ -102,6 +108,10 @@ public final class CachedNAR {
         }
         var state = (initialState ?? noise).asType(dtype)
         let dt = 1.0 / Double(steps)
+        // AB2 extrapolates from the previous step's velocity, which re-imposed frames (`keep`)
+        // would make stale: edits that pin frames always integrate with midpoint.
+        let multistep = method == .ab2 && keep == nil
+        var previous = multistep ? previousVelocity?.asType(dtype) : nil
         for step in startStep..<steps {
             if cancel?() == true || !YuE2GPUGate.shared.wait(cancel: cancel) {
                 throw YuE2Error.cancelled
@@ -109,13 +119,23 @@ public final class CachedNAR {
             let t = 1.0 - Double(step) * dt
             onVelocityCall?()
             let first = velocity(state: state, rawT: Self.clampedLogit(t))
-            let mid = state - first * MLXArray(Float(dt / 2)).asType(dtype)
-            if cancel?() == true {
-                throw YuE2Error.cancelled
+            if multistep, let last = previous {
+                // x_{n+1} = x_n − dt·(3/2·v_n − 1/2·v_{n−1}), one evaluation per step.
+                let extrapolated = first * MLXArray(Float(1.5)).asType(dtype) - last * MLXArray(Float(0.5)).asType(dtype)
+                state = state - extrapolated * MLXArray(Float(dt)).asType(dtype)
+            } else {
+                // Midpoint — every step for `.midpoint`, the bootstrap step for `.ab2`.
+                let mid = state - first * MLXArray(Float(dt / 2)).asType(dtype)
+                if cancel?() == true {
+                    throw YuE2Error.cancelled
+                }
+                onVelocityCall?()
+                let second = velocity(state: mid, rawT: Self.clampedLogit(t - dt / 2))
+                state = state - second * MLXArray(Float(dt)).asType(dtype)
             }
-            onVelocityCall?()
-            let second = velocity(state: mid, rawT: Self.clampedLogit(t - dt / 2))
-            state = state - second * MLXArray(Float(dt)).asType(dtype)
+            if multistep {
+                previous = first
+            }
             if let keep, keep.frames > 0 {
                 // Temporal inpainting (RePaint-lite): the kept frames are re-imposed at every
                 // step as the training interpolant `t·noise + (1-t)·data` at the *next* time, so
@@ -126,8 +146,12 @@ public final class CachedNAR {
                     + keep.latents[0..<frames, 0...].asType(dtype) * MLXArray(1 - tNext).asType(dtype)
                 state[0..<frames, 0...] = kept
             }
-            eval(state)
-            onStep?(step + 1, state)
+            if let previous {
+                eval(state, previous)
+            } else {
+                eval(state)
+            }
+            onStep?(step + 1, state, previous)
             onProgress?(step + 1, steps)
         }
         let result = state.asType(.float32)
@@ -153,7 +177,8 @@ public final class CachedNAR {
 
     /// Same midpoint solve as `solve(steps:...)`, but every `velocity` evaluation goes through
     /// `backend` instead of this instance's own MLX computation — `yue2 parity nar --backend
-    /// coreai-*`/`yue2 bench-coreai-nar` (T-6.4, E4). Never the default path: every existing
+    /// coreai-*`/`yue2 bench-coreai-nar` (T-6.4, E4). Midpoint only: compare it against an MLX
+    /// midpoint solve, not against the AB2 the reference profiles ship. Never the default path: every existing
     /// caller of `solve(steps:...)` keeps running synchronous, MLX-only, exactly as before.
     public func solve(
         steps: Int = 32, backend: NARVelocityBackend,

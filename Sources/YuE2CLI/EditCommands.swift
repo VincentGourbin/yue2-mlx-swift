@@ -70,18 +70,20 @@ private func loadEditPipeline(_ modelOptions: ModelOptions, reference: String?, 
     var vaePrec = vaePrecision.vaePrecision
     var tile: Int? = nil
     var release = false
+    var profile: YuE2ReferenceProfile?
     if let reference {
-        guard let profile = YuE2ReferenceProfile.named(reference) else {
+        guard let named = YuE2ReferenceProfile.named(reference) else {
             throw YuE2Error.invalidRequest("unknown reference profile \(reference)")
         }
-        profile.applyGlobalPolicy()
-        quant = profile.quant; quantHead = profile.quantizeHead; precision = profile.precision
-        vaePrec = profile.vaePrecision; tile = profile.vaeCoreFrames; release = profile.releaseWeightsBetweenStages
+        profile = named
+        named.applyGlobalPolicy()
+        quant = named.quant; quantHead = named.quantizeHead; precision = named.precision
+        vaePrec = named.vaePrecision; tile = named.vaeCoreFrames; release = named.releaseWeightsBetweenStages
     }
     let session = try await ModelSession.load(
         modelsDir: modelsDir, quant: quant, quantizeHead: quantHead, precision: precision, residency: release ? [.ar] : .all)
     let vaeModel = try YuE2VAE.load(directory: modelsDir.appendingPathComponent(vae.model.directoryName), precision: vaePrec)
-    let pipeline = YuE2Pipeline(session: session, vae: vaeModel, config: session.config, vaeCoreFrames: tile, releaseWeightsBetweenStages: release)
+    let pipeline = YuE2Pipeline(session: session, vae: vaeModel, config: profile?.generationConfig(session.config) ?? session.config, vaeCoreFrames: tile, releaseWeightsBetweenStages: release)
     return (pipeline, modelsDir)
 }
 

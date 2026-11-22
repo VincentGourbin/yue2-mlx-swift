@@ -42,7 +42,9 @@ The request file: `style`, `lyrics` (`[Verse]`, `[Chorus]`, `[Bridge]`, `[Outro]
 | `--quant` | `none` | `none`, `qint8`, `int4` (AR path only), `qint8-all`, `int4-all`, `int4-mixed` (both paths) |
 | `--quant-head` | off | quantized `lm_head`, computed by `quantizedMatmul` on the phase's rows |
 | `--precision` | `bf16` | `fp16` for the iPhone |
-| `--ode-steps` | 32 | midpoint solver steps |
+| `--ode-steps` | 32 | NAR solver steps |
+| `--ode-method` | `midpoint` (`ab2` under `--reference`) | `ab2`: steps + 1 network calls instead of 2 × steps |
+| `--draft` | off | NAR on AB2 at 8 steps (9 calls); also on `synthesize`; refuses `--ode-steps` / `--ode-method` |
 | `--vae-precision`, `--vae-core-frames` | `fp32`, 1024 (256 on the mobile profile) | fp16 decoder is inaudible and faster; the tile sets the transient peak |
 | `--vae-backend` | `mlx` | `coreai-gpu` (54.7 dB parity, macOS/iOS 27), `coreai-ane` (dead end today); MLX fallback is logged |
 | `--release-weights-between-stages` | off (on with the mobile profile) | stage-scoped residency |
@@ -72,7 +74,7 @@ yue2 synthesize --plan run/plan --semantic run/song --out run/song --checkpoint-
 yue2 decode     --latents run/song/latent.npy --out run/song/audio.wav --precision fp16 --core-frames 256
 ```
 
-`synthesize --checkpoint-dir` writes `nar-checkpoint.json` and `nar-state.npy` (192 KB) after every ODE step and clears them at the end; `--resume` restarts from the saved step, bit-exact with an uninterrupted solve (same plan, tokens, seed and steps). This is what makes losing the GPU (iOS in the background, a crash) harmless: one step lost, not the stage.
+`synthesize --checkpoint-dir` writes `nar-state-<chunk>-<step>-<id>.npy` (192 KB, plus `nar-velocity-…` under `--ode-method ab2`) then commits them with `nar-checkpoint.json` after every ODE step and clears them at the end; `--resume` restarts from the saved step, bit-exact with an uninterrupted solve (same plan, tokens, seed and steps). This is what makes losing the GPU (iOS in the background, a crash) harmless: one step lost, not the stage.
 
 `decode` prints a line `DECODE backend=… tiles=… padded_tiles=… seconds=… footprint_before_load_mb=… footprint_after_load_mb=… footprint_decode_peak_mb=… mlx_decode_peak_mb=…`.
 

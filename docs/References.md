@@ -34,6 +34,7 @@ Quick read: 4-bit is fastest because the autoregressive phases (score, then sema
 | `memoryProfile` | `mac` · `mobile` | MLX caches per stage (Mac: 2 / 4 / 1 GB) or limits sized from available memory (mobile: cache ≈ 1 GB, GC threshold = available − 1.25 GB). Mobile limits thrash a bf16 working set: `16bit-lean` stays on `mac`. |
 | `mobileLimitsMB` | nil · (256, 3072) | Fixed MLX cache and GC threshold on the mobile profile instead of the adaptive sizing (`4bit-tiny`). |
 | `odeSteps` | nil = 32 | Midpoint solver steps (2 evaluations each). 24 steps bring 8-bit under 70 s, 16 steps bring everything under 45 s; listening validation in progress. |
+| `odeMethod` | `ab2` (all profiles) | Adams–Bashforth 2: steps + 1 evaluations instead of 2 × steps, judged identical by ear to midpoint (2026-11-21). `generationConfig(_:quality: .draft)` (`--draft`) solves at 8 AB2 steps (9 evaluations, 8–10× less NAR time, same memory), judged good by ear in 4, 8 and 16 bits on a 251 s song ([iOS.md](iOS.md#draft-nar-qualitydraft)). |
 
 ## Choosing
 
