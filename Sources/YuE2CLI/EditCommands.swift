@@ -64,7 +64,7 @@ struct MelodyCommand: AsyncParsableCommand {
 }
 
 /// Shared loading for the two edit commands.
-private func loadEditPipeline(_ modelOptions: ModelOptions, reference: String?, vae: DecodeCommand.VAEVariant, vaePrecision: DecodeCommand.Precision) async throws -> (YuE2Pipeline, URL) {
+private func loadEditPipeline(_ modelOptions: ModelOptions, reference: String?, vae: DecodeCommand.VAEVariant, vaePrecision: DecodeCommand.Precision, draft: Bool = false) async throws -> (YuE2Pipeline, URL) {
     let modelsDir = try resolveModelsDir(modelOptions.modelsDir)
     var quant = modelOptions.quant, quantHead = modelOptions.quantHead, precision = modelOptions.precision
     var vaePrec = vaePrecision.vaePrecision
@@ -83,7 +83,10 @@ private func loadEditPipeline(_ modelOptions: ModelOptions, reference: String?, 
     let session = try await ModelSession.load(
         modelsDir: modelsDir, quant: quant, quantizeHead: quantHead, precision: precision, residency: release ? [.ar] : .all)
     let vaeModel = try YuE2VAE.load(directory: modelsDir.appendingPathComponent(vae.model.directoryName), precision: vaePrec)
-    let pipeline = YuE2Pipeline(session: session, vae: vaeModel, config: profile?.generationConfig(session.config) ?? session.config, vaeCoreFrames: tile, releaseWeightsBetweenStages: release)
+    let quality: YuE2ReferenceProfile.NARQuality = draft ? .draft : .full
+    let config = try profile?.generationConfig(session.config, quality: quality)
+        ?? (draft ? GenerationConfig(abc: session.config.abc, semantic: session.config.semantic, odeSteps: YuE2ReferenceProfile.draftODESteps, odeMethod: "ab2", context: session.config.context, version: session.config.version) : session.config)
+    let pipeline = YuE2Pipeline(session: session, vae: vaeModel, config: config, vaeCoreFrames: tile, releaseWeightsBetweenStages: release)
     return (pipeline, modelsDir)
 }
 
@@ -134,6 +137,9 @@ struct RegenerateCommand: AsyncParsableCommand {
     @Option(name: .long, help: "Keep the song up to this many seconds, regenerate after.") var fromSeconds: Double
     @Option(name: .long, help: "Sampling seed for the regenerated part.") var seed: UInt64 = 1
     @Flag(name: .long, help: "Let the AR choose the new length (default: the source's length, cut there if the song has not ended).") var freeLength: Bool = false
+    @Option(name: .long, help: "ABC score for the regenerated part (the song's score with notes written after --from-seconds, or bars added after its end); the kept part stays exact.") var score: String?
+    @Option(name: .long, help: "Let the song grow by at most this many seconds past the source's length (with a lengthened --score).") var extendSeconds: Double?
+    @Flag(name: .long, help: "Draft NAR (8 steps; regenerate re-imposes the kept frames, so midpoint: 16 calls instead of 64) to audition a repair before the full render.") var draft = false
     @Option(name: .long, help: "Reference configuration (yue2 references).") var reference: String?
     @Option(name: .long) var vae: DecodeCommand.VAEVariant = .standard
     @Option(name: .long) var vaePrecision: DecodeCommand.Precision = .fp16
@@ -143,10 +149,14 @@ struct RegenerateCommand: AsyncParsableCommand {
     func run() async throws {
         let source = try SongResult.load(from: URL(fileURLWithPath: song))
         let frame = Int((fromSeconds * 25).rounded())  // 25 latent frames per second
-        let (pipeline, _) = try await loadEditPipeline(modelOptions, reference: reference, vae: vae, vaePrecision: vaePrecision)
+        let (pipeline, _) = try await loadEditPipeline(modelOptions, reference: reference, vae: vae, vaePrecision: vaePrecision, draft: draft)
         let sampling = try samplingOverrides.semanticSampling(default: source.config.semantic)
         var count = 0
-        let result = try await pipeline.regenerate(source, fromFrame: frame, seed: seed, semanticSampling: sampling, length: freeLength ? .free : .keepSource) { event in
+        if freeLength, extendSeconds != nil { throw YuE2Error.invalidRequest("--free-length and --extend-seconds are exclusive") }
+        let abc = try score.map { try String(contentsOfFile: $0, encoding: .utf8) }
+        let length: YuE2Pipeline.RegenerateLength = freeLength ? .free
+            : extendSeconds.map { .extended(frames: Int(($0 * 25).rounded())) } ?? .keepSource
+        let result = try await pipeline.regenerate(source, fromFrame: frame, seed: seed, score: abc, semanticSampling: sampling, length: length) { event in
             if case .semanticToken(let c) = event { count = c; if c % 100 == 0 { FileHandle.standardError.write(Data("semantic \(c) tokens\u{2026}\n".utf8)) } }
             reportEvents(event)
         }

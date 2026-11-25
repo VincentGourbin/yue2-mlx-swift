@@ -2,6 +2,13 @@
 
 Published versions are squashed commits on `main` (the working history stays local); each version has a tag and a GitHub release.
 
+## 1.12.0 — 2026-11-25
+
+- **An unsung last line is bad luck (ASK Q18)**: the same text sings its final line on 5 seeds of 6 (the sixth hits the 300 s cap); no planning lever. Another seed is the simple answer; the tools below repair a song worth keeping.
+
+- **Timeline: word and line attention (ASK Q18)**: `LyricTimeline.Word.attention` / `Line.attention`, the word head's mean attention while the word is sung (attention clock only). A hint: ≥ 0.35 the line was sung; low inside the song it was not; low on the last line it proves nothing (sung final lines score 0–0.02 too). Optional fields: older `timeline.json` files still load.
+- **Repair or lengthen a finished song**: `regenerate(_:fromFrame:seed:score:)` conditions the regenerated part on an edited score (notes written into a silent outro, bars added after the end); kept frames stay bit-exact, the score keeps its planned tokens up to the first changed line (`SymbolicPlan.replacingScore(_:tokenizer:)`). `RegenerateLength.extended(frames:)` (within the sampling's `maxTokens`; a length the single-chunk context cannot hold is refused before the AR runs). CLI: `regenerate --score`, `--extend-seconds`, `--draft`.
+
 ## 1.11.0 — 2026-11-22
 
 - **AB2 NAR integrator on every reference profile**: Adams–Bashforth 2 (`ODEMethod.ab2`, `--ode-method ab2`) costs steps + 1 network calls instead of 2 × steps (33 instead of 64 at 32 steps), bootstrapped by one midpoint step; edits that re-impose frames (`.keep`, regenerate) fall back to midpoint. Judged identical by ear to midpoint in bf16 and in the fp16 packed iPhone profile. NAR −49 % on an M3 Max (52.6 → 27.0 s, bf16, 70 s song); on an iPhone 15 Pro Max 3.8 s of NAR per second of music instead of 7.5–8.6, pause/kill/resume unchanged. `GenerationConfig.odeMethod` (`"midpoint"` stays the checkpoint default), `ODEMethod.evaluations(steps:startStep:)` for time estimates.

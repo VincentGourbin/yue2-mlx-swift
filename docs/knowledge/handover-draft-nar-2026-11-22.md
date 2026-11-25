@@ -9,7 +9,7 @@ Destinataire : l'agent qui intègre le moteur dans l'app `yue2-ios` (Vincent, 20
 
 ## État des branches
 
-- Moteur : AB2 et le brouillon sont sur `main` en local (dernier commit fonctionnel `bc1046d`). Rien n'est publié : la dernière version publiée est la 1.10.0. La 1.11.0 attend le « publie » de Vincent.
+- Moteur : AB2 et le brouillon sont **publiés en 1.11.0** (2026-11-22, tag `v1.11.0`, release GitHub).
 - App : la branche `engine-ab2` (partie de `release/1.7`, commit `e20f6ed`) passe déjà le moteur en local (`Scripts/pin-engine.sh --local`). Elle branche AB2 (`StageRunner` via `profile.generationConfig`) et l'estimation de durée (`Calibration`, `SongStore.fittedMinutes`). Elle est installée sur l'iPhone et validée (pause, kill et reprise), mais pas fusionnée. Le brouillon n'y est pas branché. Une fois la 1.11.0 publiée : `pin-engine.sh v1.11.0`.
 
 ## À prévoir côté app

@@ -31,14 +31,24 @@ extension YuE2Pipeline {
         /// The AR decides, within the sampling's `maxTokens` — a song re-conditioned on its first
         /// half readily grows to two or three times its length.
         case free
+        /// At most the source's length plus `frames` (25 per second): the AR may stop earlier.
+        /// For a score lengthened after its end (`score:`); single NAR chunk, so the song stays
+        /// under the context (≈ 860 s with a 3 000-token prefix).
+        case extended(frames: Int)
     }
 
     /// Keeps `song` up to `frame` (one latent frame = 40 ms) exactly and regenerates the rest:
     /// the semantic tokens after `frame` are re-sampled by the AR model with the kept tokens as
     /// its past (`seed`), then the NAR solves the free frames against the kept latents. The
     /// seam at `frame` is continuous by construction (same conditioning, inpainting mask).
+    ///
+    /// `score` replaces the song's ABC score for the regenerated part (notes written into a
+    /// silent outro, bars added after the end). The kept tokens and latents stay exactly as they
+    /// are, but the whole song is then conditioned on the new score: change only what comes after
+    /// `frame`. The score's tokens are kept as they were up to the first changed line, so an
+    /// unchanged beginning keeps the planner's own ids.
     public func regenerate(
-        _ song: SongResult, fromFrame frame: Int, seed: UInt64,
+        _ song: SongResult, fromFrame frame: Int, seed: UInt64, score: String? = nil,
         semanticSampling: Sampling? = nil, length: RegenerateLength = .keepSource,
         onEvent: ((PipelineEvent) -> Void)? = nil, cancel: (() -> Bool)? = nil
     ) async throws -> SongResult {
@@ -47,9 +57,16 @@ extension YuE2Pipeline {
             throw YuE2Error.invalidRequest("fromFrame must be in 0..<\(total) (the song has \(total) frames)")
         }
         var sampling = semanticSampling ?? config.semantic
-        if case .keepSource = length {
+        switch length {
+        case .keepSource:
             sampling.maxTokens = min(sampling.maxTokens, total)
             sampling.minTokens = min(sampling.minTokens, total)
+        case .extended(let frames):
+            guard frames > 0 else { throw YuE2Error.invalidRequest("extended(frames:) needs frames > 0") }
+            sampling.maxTokens = min(sampling.maxTokens, total + frames)
+            sampling.minTokens = min(sampling.minTokens, total)
+        case .free:
+            break
         }
         try session.loadWeights(of: .ar)
         YuE2MemoryManager.configure(for: .ar)
@@ -57,9 +74,14 @@ extension YuE2Pipeline {
         let generator = SemanticGenerator(model: session.model, tokenizer: session.tokenizer, config: config)
         var request = song.semantic.plan.request
         request.seed = Int(truncatingIfNeeded: seed)
-        let plan = SymbolicPlan(
+        var plan = SymbolicPlan(
             request: request, abc: song.semantic.plan.abc, abcIDs: song.semantic.plan.abcIDs,
             prefix: song.semantic.plan.prefix)
+        if let score { plan = try plan.replacingScore(score, tokenizer: session.tokenizer) }
+        // Edits solve one NAR chunk: refuse a length the context cannot hold before paying the AR.
+        guard plan.prefix.count + sampling.maxTokens + 1 <= config.context else {
+            throw YuE2Error.invalidRequest("prefix (\(plan.prefix.count)) + up to \(sampling.maxTokens) frames exceeds the \(config.context)-token context of a single-chunk edit")
+        }
         var count = 0
         let semantic = try generator.generateSemantic(
             plan: plan, sampling: sampling, continuation: Array(song.semantic.tokens.prefix(frame)),

@@ -30,6 +30,10 @@ public enum AttentionTimeline {
     public struct Reading: Equatable, Sendable {
         public var barStarts: [Double?]
         public var wordStarts: [Double?]
+        /// Per word, the word head's mean attention on it while the path dwells there (0…1; 0: the
+        /// path ends before it; nil: the song's last word, which has no successor to read it from). Unreliable
+        /// on the last words of the lyrics (see `LyricTimeline.Line.attention`).
+        public var wordAttention: [Double?] = []
     }
 
     /// Prompt token → segment: score bar `b` is segment `b`, lyric word `w` is `bars + w`.
@@ -128,7 +132,7 @@ public enum AttentionTimeline {
         func build(_ grid: [LyricTimeline.GridPoint]) throws -> LyricTimeline {
             try LyricTimeline.build(
                 abc: abc, lyrics: lyrics, language: language, grid: grid.count >= 2 ? grid : nil,
-                anchors: reading.wordStarts, duration: audio, clockSource: "attention")
+                anchors: reading.wordStarts, wordAttention: reading.wordAttention, duration: audio, clockSource: "attention")
         }
         let first = try build(grid)
         return try build(refined(grid, by: first, anchors: reading.wordStarts, unit: score.unit, barStarts: starts))
@@ -200,12 +204,15 @@ public enum AttentionTimeline {
             barStarts[0] = barStarts[0].map { _ in 0 }
         }
         var wordStarts: [Double?] = []
+        var wordAttention: [Double?] = []
         if segments.words > 1 {
             let word = head(barHeads.count, segments.bars..<width)
             // Attention on word k + 1 begins when word k is sung; the last word has no successor.
-            wordStarts = Array(segmentStarts(monotonicPath(word), count: segments.words).dropFirst()) + [nil]
+            let path = monotonicPath(word)
+            wordStarts = Array(segmentStarts(path, count: segments.words).dropFirst()) + [nil]
+            wordAttention = dwellAttention(word, path: path, count: segments.words).dropFirst().map { $0 } + [nil]
         }
-        return Reading(barStarts: barStarts, wordStarts: wordStarts)
+        return Reading(barStarts: barStarts, wordStarts: wordStarts, wordAttention: wordAttention)
     }
 
     // MARK: - Prompt segments
@@ -337,6 +344,14 @@ public enum AttentionTimeline {
             if f > 0, moved[f][s] { s -= 1 }
         }
         return path
+    }
+
+    /// Mean probability of each segment over the frames the path spends on it; 0 for a segment
+    /// the path never reaches (it ends before: a word the song never sings, placed by default).
+    static func dwellAttention(_ probs: [[Float]], path: [Int], count: Int) -> [Double] {
+        var sum = [Double](repeating: 0, count: count), frames = [Int](repeating: 0, count: count)
+        for (f, s) in path.enumerated() where s < count { sum[s] += Double(probs[f][s]); frames[s] += 1 }
+        return (0..<count).map { frames[$0] > 0 ? sum[$0] / Double(frames[$0]) : 0 }
     }
 
     /// Time each segment is first reached on the path (nil if never).
