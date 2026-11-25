@@ -85,4 +85,46 @@ struct NumpyAndWavTests {
         let first = Int16(littleEndian: samples.withUnsafeBytes { $0.load(as: Int16.self) })
         #expect(first == 32767)
     }
+
+    @Test func wavInt16ReplacesNaNSamplesWithSilence() throws {
+        let url = tempURL("nan-int16.wav")
+        defer { try? FileManager.default.removeItem(at: url) }
+        // MLX.clip clamps finite out-of-range values but propagates NaN; a NaN reaching
+        // Int32(...) is what used to trap and lose the whole render in saveArtifacts.
+        let audio = MLXArray([Float.nan, Float(0.5), Float.nan, Float(-0.25)], [2, 2])
+        try AudioExporter.exportToWAV(audio: audio, url: url, sampleRate: 48_000, format: .int16)
+
+        let data = try Data(contentsOf: url)
+        #expect(data.count == 44 + 4 * 2)
+        let payload = data.subdata(in: 44..<data.count)
+        // [2, 2] is transposed before interleaving: NaN, NaN, 0.5, -0.25.
+        let values = payload.withUnsafeBytes { raw -> [Int16] in
+            (0..<4).map { Int16(littleEndian: raw.load(fromByteOffset: $0 * 2, as: Int16.self)) }
+        }
+        #expect(values[0] == 0)
+        #expect(values[1] == 0)
+        #expect(values[2] == 16384)
+        #expect(values[3] == -8192)
+    }
+
+    @Test func wavFloat32ReplacesNaNSamplesWithSilence() throws {
+        let url = tempURL("nan-f32.wav")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let audio = MLXArray([Float.nan, Float(0.5), Float.nan, Float(-0.25)], [2, 2])
+        try AudioExporter.exportToWAV(audio: audio, url: url, sampleRate: 48_000, format: .float32)
+
+        let data = try Data(contentsOf: url)
+        #expect(data.count == 44 + 4 * 4)
+        let payload = data.subdata(in: 44..<data.count)
+        let values = payload.withUnsafeBytes { raw -> [Float] in
+            (0..<4).map {
+                Float(bitPattern: UInt32(littleEndian: raw.load(fromByteOffset: $0 * 4, as: UInt32.self)))
+            }
+        }
+        #expect(values.allSatisfy { $0.isFinite })
+        #expect(values[0] == 0)
+        #expect(values[1] == 0)
+        #expect(values[2] == 0.5)
+        #expect(values[3] == -0.25)
+    }
 }

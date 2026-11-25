@@ -87,26 +87,44 @@ public final class YuE2VAE: Module {
         let frames = z.dim(1) // z is NLC: [1, T, latentDim]
         let ratio = config.downsamplingRatio
         let total = naturalOutputLength(frames: frames)
-        let tiles = (frames + coreFrames - 1) / coreFrames
 
+        // Issue #4: same shape-agnostic retry as the package-level `decodeTiled(using:)`. This
+        // method is the entry point for `synthesize`, `remix`, `encode` and `parity`, so both
+        // paths need the guard. See `nextVAECoreFrames` for the policy.
+        var effectiveCore = coreFrames
         var crops: [MLXArray] = []
-        var tileIndex = 0
-        var start = 0
-        while start < frames {
-            YuE2GPUGate.shared.wait()
-            let end = min(frames, start + coreFrames)
-            let left = max(0, start - haloFrames)
-            let right = min(frames, end + haloFrames)
-            let tile = decode(z[0..., left..<right, 0...])
-            let outStart = start * ratio
-            let outEnd = min(end * ratio, total)
-            let cropStart = (start - left) * ratio
-            let crop = tile[0..., cropStart..<(cropStart + outEnd - outStart), 0...]
-            eval(crop) // materialize and let `tile`'s larger graph be released before the next tile
-            crops.append(crop)
-            tileIndex += 1
-            onProgress?(tileIndex, tiles)
-            start += coreFrames
+        while true {
+            let finalPass = effectiveCore <= vaeMinRetryCoreFrames
+            crops.removeAll(keepingCapacity: true)
+            let tiles = (frames + effectiveCore - 1) / effectiveCore
+            var foundNonFinite = false
+            var tileIndex = 0
+            var start = 0
+            while start < frames {
+                YuE2GPUGate.shared.wait()
+                let end = min(frames, start + effectiveCore)
+                let left = max(0, start - haloFrames)
+                let right = min(frames, end + haloFrames)
+                let tile = decode(z[0..., left..<right, 0...])
+                let outStart = start * ratio
+                let outEnd = min(end * ratio, total)
+                let cropStart = (start - left) * ratio
+                let crop = tile[0..., cropStart..<(cropStart + outEnd - outStart), 0...]
+                eval(crop) // materialize and let `tile`'s larger graph be released before the next tile
+                if !finalPass, !vaeCropIsFinite(crop) {
+                    foundNonFinite = true
+                    break
+                }
+                crops.append(crop)
+                tileIndex += 1
+                onProgress?(tileIndex, tiles)
+                start += effectiveCore
+            }
+            guard let next = nextVAECoreFrames(current: effectiveCore, foundNonFinite: foundNonFinite) else {
+                break
+            }
+            logVAETileRetry(from: effectiveCore, to: next)
+            effectiveCore = next
         }
         let audio = concatenated(crops, axis: 1)
         eval(audio)
