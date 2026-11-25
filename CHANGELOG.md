@@ -1,6 +1,10 @@
 # Changelog
 
-Published versions are squashed commits on `main` (the working history stays local); each version has a tag and a GitHub release.
+Published versions are squashed commits on `main`, merged through a pull request (the working history stays local); each version has a tag and a GitHub release.
+
+## 1.12.1 — 2026-11-25
+
+- **No NaN audio from the fp16 VAE on M5, a WAV export that survives it** (PR #6 by Simon Law, @ramishi; fixes #3, addresses #4): on an M5 (MLX's NAX kernels), fp16 decode tiles of 704-1280 frames emitted NaN, and the int16 export trapped and lost the whole render. The exporter now replaces non-finite samples with silence; the `fast` profiles decode with 640-frame tiles instead of 1024; both tiled decode entry points re-decode at half the core size (floor 64) when a crop is non-finite. Output is bit-identical at every tile size (checked on an M3 Max, which never showed the NaN); the clean path pays one finiteness check per tile.
 
 ## 1.12.0 — 2026-11-25
 

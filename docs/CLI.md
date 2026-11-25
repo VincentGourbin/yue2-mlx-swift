@@ -109,7 +109,7 @@ Weights `m-a-p/YuE2-3B` and `m-a-p/YuE2-Vae` (CC-BY-NC-4.0), tokenizer converted
 
 ```
 $ yue2 references
-4bit-fast   quant=int4-mixed+head precision=bf16 nar=dequantized compiled=false vae=fp16/1024 residency=all memory=mac ode=32
+4bit-fast   quant=int4-mixed+head precision=bf16 nar=dequantized compiled=false vae=fp16/640 residency=all memory=mac ode=32
             int4-mixed-head pack (2.5 GB), everything resident, NAR dequantized to bf16 for the solve
 …
 ```
