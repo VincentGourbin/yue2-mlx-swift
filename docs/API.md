@@ -92,6 +92,8 @@ let song = try await pipeline.generate(request: request)
 let variation = try await pipeline.vary(song, strength: 0.4, seed: 2, onEvent: onEvent)
 // "regenerate from here": keep up to a frame (40 ms), re-sample the tokens after it, solve against the kept part
 let ending = try await pipeline.regenerate(song, fromFrame: 20 * 25, seed: 3, onEvent: onEvent)   // length: .keepSource by default, .free lets the AR decide
+// a lyric line the plan left without notes (ASK Q18): same song up to the outro, notes written into it
+let repaired = try await pipeline.regenerate(song, fromFrame: 6_075, seed: 3, score: editedABC, onEvent: onEvent)   // .extended(frames:) for bars added after the end
 
 let saved = try SongResult.load(from: directory)                               // a generate --out directory, for later edits
 ```
@@ -125,7 +127,7 @@ let now = timeline.position(at: player.currentTime)   // bar, beat, note (while 
 
 | Type | Role |
 |---|---|
-| `LyricTimeline` | `bars` (`start`, `beats`, `section`), `notes` (`start`, `end`, `midi`, `bar`, `beat`, `beats`), `lines` → `words` (`onScore`) → `syllables` (`notes`, `firstNote`), `duration`, `grid`; `position(at:)`, `write(to:)`, `load(from:)`; `wordsOnScore` (under 0.9: the render left its score); `fit(abc:lyrics:language:)` (notes per syllable of an imposed score, before generating); `build(abc:lyrics:language:grid:heard:anchors:duration:)` places a score on any clock |
+| `LyricTimeline` | `bars` (`start`, `beats`, `section`), `notes` (`start`, `end`, `midi`, `bar`, `beat`, `beats`), `lines` (`attention`: ≥ 0.35 sung; low on the last line proves nothing) → `words` (`onScore`, `attention`) → `syllables` (`notes`, `firstNote`), `duration`, `grid`; `position(at:)`, `write(to:)`, `load(from:)`; `wordsOnScore` (under 0.9: the render left its score); `fit(abc:lyrics:language:)` (notes per syllable of an imposed score, before generating); `build(abc:lyrics:language:grid:heard:anchors:duration:)` places a score on any clock |
 | `AttentionTimeline` | `timeline(model:tokenizer:semantic:)` (fresh song, reuses the KV cache), `timeline(model:tokenizer:plan:semantic:)`, `reanalyze(song:model:tokenizer:)`, `SavedSong(directory:)`, `read(...)` (raw bar and word starts); the heads: `barHeads`, `wordHead`, `barLead` |
 | `ABCScore` | reader of the score dialect (two voices, sections, multi-bar rests, ties, inline `M:`/`K:` changes): bars, sounding notes, `barStarts` |
 | `YuE2ForCausalLM.prefixAttention(...)` | the teacher-forced pass: attention mass of chosen heads on prompt segments per frame |

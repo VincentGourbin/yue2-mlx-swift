@@ -188,6 +188,25 @@ struct InstrumentalKaraokeTests {
         #expect(AttentionTimeline.segmentStarts(path, count: 4) == [0, 0.08, 0.16, nil])
     }
 
+    @Test func dwellAttentionAveragesTheFramesOnEachSegment() {
+        let probs: [[Float]] = [[0.9, 0.1, 0], [0.7, 0.3, 0], [0.2, 0.6, 0.2], [0.5, 0.4, 0.1]]
+        let a = AttentionTimeline.dwellAttention(probs, path: [0, 0, 1, 1], count: 3)
+        #expect(abs(a[0] - 0.8) < 1e-6 && abs(a[1] - 0.5) < 1e-6 && a[2] == 0)
+    }
+
+    /// Word attention reaches lines as the mean of their words; no attention clock, no field.
+    @Test func lineAttentionAveragesItsWords() throws {
+        let t = try LyricTimeline.build(
+            abc: score, lyrics: "one two\nthree four", anchors: [0.5, 1, 2, 2.5],
+            wordAttention: [0.8, 0.6, 0.03, nil])
+        #expect(abs(t.lines[0].attention! - 0.7) < 1e-9 && t.lines[1].attention == 0.03)
+        #expect(t.lines[1].words[1].attention == nil)
+        let plain = try LyricTimeline.build(abc: score, lyrics: "one two")
+        #expect(plain.lines[0].attention == nil)
+        let decoded = try JSONDecoder().decode(LyricTimeline.self, from: JSONEncoder().encode(plain))
+        #expect(decoded == plain)
+    }
+
     @Test func wordAnchorsRefineTheBarClock() throws {
         // Bar heads 0.1 s late; the word head hears every word 0.1 s before the clock says.
         let grid = (0..<5).map { LyricTimeline.GridPoint(subbeat: $0 * 16, time: Double($0) * 2 + 0.5) }

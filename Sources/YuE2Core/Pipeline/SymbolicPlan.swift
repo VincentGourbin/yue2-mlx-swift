@@ -121,3 +121,44 @@ public struct SymbolicPlan: Codable, Equatable {
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 }
+
+extension SymbolicPlan {
+    /// This plan with another ABC score: same request, prefix rebuilt around the new score. The
+    /// score's tokens are kept as planned up to its first changed line, so an edit after a point
+    /// leaves every token before it as the planner wrote it (ASK Q18). Use it to write notes into
+    /// a section the plan left silent, before the semantic stage or with `regenerate(score:)`
+    /// after it. Needs a plan with a score (`cot` full or melody).
+    public func replacingScore(_ abc: String, tokenizer: YuE2Tokenizer) throws -> SymbolicPlan {
+        guard abc != self.abc else { return self }
+        guard request.cot != .off else {
+            throw YuE2Error.invalidRequest("replacingScore needs a plan with a score (cot full or melody)")
+        }
+        let ids = Self.spliceScoreIDs(old: self.abc ?? "", oldIDs: abcIDs, new: abc, tokenizer: tokenizer)
+        var scored = request
+        if scored.abc != nil { scored.abc = abc }
+        return SymbolicPlan(
+            request: scored, abc: abc, abcIDs: ids,
+            prefix: try Prefixes.tokenPrefixes(request: scored, tokenizer: tokenizer, abcIDs: ids))
+    }
+
+    /// Token ids of `new`: `oldIDs` kept up to the last token that ends before the first changed
+    /// line of `old`, the rest encoded afresh. Falls back to encoding `new` whole when `oldIDs`
+    /// do not spell `old` byte for byte.
+    static func spliceScoreIDs(old: String, oldIDs: [Int], new: String, tokenizer: YuE2Tokenizer) -> [Int] {
+        let oldBytes = Array(old.utf8), newBytes = Array(new.utf8)
+        guard oldIDs.reduce(0, { $0 + tokenizer.byteCount(of: $1) }) == oldBytes.count,
+              tokenizer.decode(oldIDs) == old else { return tokenizer.encode(new) }
+        var common = 0
+        while common < min(oldBytes.count, newBytes.count), oldBytes[common] == newBytes[common] { common += 1 }
+        // Back to the start of the changed line: the tokenizer never merges across a newline there.
+        while common > 0, oldBytes[common - 1] != 0x0A { common -= 1 }
+        var kept = 0, offset = 0
+        for id in oldIDs {
+            let n = tokenizer.byteCount(of: id)
+            if offset + n > common { break }
+            offset += n; kept += 1
+        }
+        guard let tail = String(bytes: newBytes[offset...], encoding: .utf8) else { return tokenizer.encode(new) }
+        return Array(oldIDs.prefix(kept)) + tokenizer.encode(tail)
+    }
+}

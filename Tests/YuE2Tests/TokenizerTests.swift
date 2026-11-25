@@ -92,4 +92,33 @@ struct TokenizerTests {
             #expect(tokenizer.encode(entry.text).allSatisfy { $0 >= 0 && $0 < YuE2Token.eod })
         }
     }
+
+    /// A score edited after its cut keeps the planner's ids up to the changed line (ASK Q18).
+    @Test func scoreSpliceKeepsTheUnchangedIDs() {
+        let old = "X:1\nM:2/4\nL:1/32\nK:Bb\n% chorus\nV: Vocal\n\"Bb\"f16-|\"F\"f8d6c2|\n% outro\nV: Vocal\n\"Bb\"z16|\"F\"z16|\nV: Ins\nB2z6d2c2B4|c8d2c2B4|\n"
+        let new = old.replacingOccurrences(of: "\"Bb\"z16|\"F\"z16|", with: "\"Bb\"z4B4c4d4|\"F\"c16|")
+        let oldIDs = tokenizer.encode(old)
+        let ids = SymbolicPlan.spliceScoreIDs(old: old, oldIDs: oldIDs, new: new, tokenizer: tokenizer)
+        #expect(tokenizer.decode(ids) == new)
+        // Every old token that ends before the changed line is kept as it was.
+        let o = Array(old.utf8), n = Array(new.utf8)
+        var lineStart = zip(o, n).prefix { $0 == $1 }.count
+        while lineStart > 0, o[lineStart - 1] != 0x0A { lineStart -= 1 }
+        var bytes = 0, kept = 0
+        while kept < oldIDs.count, bytes + tokenizer.byteCount(of: oldIDs[kept]) <= lineStart {
+            bytes += tokenizer.byteCount(of: oldIDs[kept]); kept += 1
+        }
+        #expect(kept > 10 && Array(ids.prefix(kept)) == Array(oldIDs.prefix(kept)))
+        // The plan keeps its request and wraps the spliced ids in the usual prompt.
+        let request = try! SongRequest(style: "pop", lyrics: "[verse]\nla la", cot: .full, seed: 1)
+        let plan = SymbolicPlan(
+            request: request, abc: old, abcIDs: oldIDs,
+            prefix: try! Prefixes.tokenPrefixes(request: request, tokenizer: tokenizer, abcIDs: oldIDs))
+        let edited = try! plan.replacingScore(new, tokenizer: tokenizer)
+        #expect(edited.abc == new && edited.abcIDs == ids && edited.request == request)
+        #expect(edited.prefix == (try! Prefixes.tokenPrefixes(request: request, tokenizer: tokenizer, abcIDs: ids)))
+        #expect(try! plan.replacingScore(old, tokenizer: tokenizer).prefix == plan.prefix)
+        // Ids that do not spell the old score: encoded whole.
+        #expect(SymbolicPlan.spliceScoreIDs(old: old, oldIDs: [1, 2], new: new, tokenizer: tokenizer) == tokenizer.encode(new))
+    }
 }

@@ -8,12 +8,14 @@ import YuE2Core
 
 /// Applies `--ode-steps` on top of a loaded `GenerationConfig`, if given. Shared by
 /// `GenerateCommand` and `SynthesizeCommand`.
-func resolveConfig(_ base: GenerationConfig, odeSteps: Int?) throws -> GenerationConfig {
-    guard let odeSteps else { return base }
+func resolveConfig(_ base: GenerationConfig, odeSteps: Int?, odeMethod: ODEMethod? = nil) throws -> GenerationConfig {
+    guard odeSteps != nil || odeMethod != nil else { return base }
     return try GenerationConfig(
-        abc: base.abc, semantic: base.semantic, odeSteps: odeSteps,
-        odeMethod: base.odeMethod, context: base.context, version: base.version)
+        abc: base.abc, semantic: base.semantic, odeSteps: odeSteps ?? base.odeSteps,
+        odeMethod: odeMethod?.rawValue ?? base.odeMethod, context: base.context, version: base.version)
 }
+
+extension ODEMethod: ExpressibleByArgument {}
 
 struct GenerateCommand: AsyncParsableCommand {
     /// Sung notes SheetSage2 may hear on an instrumental before it counts as a voice (clean
@@ -34,6 +36,12 @@ struct GenerateCommand: AsyncParsableCommand {
 
     @Option(name: .long, help: "Flow-matching ODE steps (overrides the checkpoint default).")
     var odeSteps: Int?
+
+    @Option(name: .long, help: "NAR integrator: midpoint (reference, 2 evaluations per step) or ab2 (Adams–Bashforth 2, steps + 1 evaluations).")
+    var odeMethod: ODEMethod?
+
+    @Flag(name: .long, help: "Draft NAR: AB2 at 8 steps (9 network calls instead of 33), 8–10× faster synthesis, same plan, tokens, VAE and memory; re-solve the same tokens without it for the full render.")
+    var draft = false
 
     @Option(name: .long, help: "Output directory for the song's artifacts.")
     var out: String
@@ -83,7 +91,11 @@ struct GenerateCommand: AsyncParsableCommand {
         var vaePrecisionChoice = vaePrecision.vaePrecision
         var vaeTile = vaeCoreFrames
         var releaseFlag = releaseWeightsBetweenStages
-        var steps = odeSteps
+        if draft, odeSteps != nil || odeMethod != nil {
+            throw YuE2Error.invalidRequest("--draft fixes the NAR schedule; drop --ode-steps / --ode-method")
+        }
+        var steps = draft ? YuE2ReferenceProfile.draftODESteps : odeSteps
+        var method = draft ? ODEMethod.ab2 : odeMethod
         if let reference {
             guard let profile = YuE2ReferenceProfile.named(reference) else {
                 throw YuE2Error.invalidRequest("unknown reference profile \(reference); see `yue2 references`")
@@ -95,7 +107,8 @@ struct GenerateCommand: AsyncParsableCommand {
             vaePrecisionChoice = profile.vaePrecision
             vaeTile = profile.vaeCoreFrames
             releaseFlag = profile.releaseWeightsBetweenStages
-            steps = odeSteps ?? profile.odeSteps
+            steps = steps ?? profile.odeSteps
+            method = method ?? profile.odeMethod
             FileHandle.standardError.write(Data("reference \(profile.id): \(profile.summary)\n".utf8))
         }
 
@@ -125,7 +138,7 @@ struct GenerateCommand: AsyncParsableCommand {
             vaeModel = try YuE2VAE.load(directory: vaeDirectory, precision: vaePrecisionChoice)
         }
         profilingSession?.endPhase("1. Model Loading", category: .modelLoad)
-        let config = try resolveConfig(session.config, odeSteps: steps)
+        let config = try resolveConfig(session.config, odeSteps: steps, odeMethod: method)
         let abcSampling = try samplingOverrides.abcSampling(default: config.abc)
         let semanticSampling = try samplingOverrides.semanticSampling(default: config.semantic)
 

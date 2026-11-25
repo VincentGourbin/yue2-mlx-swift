@@ -508,3 +508,62 @@ Banc sur le Mac en `8bit-lean`, 4 graines par levier, deux témoins :
 - **Conseil** : le bloc unique reste la voie sûre pour un air court. Une mélodie différente par texte quand l'air peut en porter une ; ce n'est mesuré que sur des phrases de 4 à 5 mesures. Le guidage seulement si son coût passe sur l'iPhone.
 - **(3)** inchangé : aucun indicateur moteur ne voit ces échecs, puisque la timeline suit l'attention. Le contrôle reste la transcription.
 - Rien à épingler pour (b) : les deux champs sont déjà dans 1.9.1 ; la 1.10.0 (Q16) n'y change rien.
+
+## ASK — équipe framework, Q18 : la dernière ligne des paroles n'a pas de notes dans le plan (elle n'est jamais chantée) ; compléter ou allonger la fin d'une chanson finie — 2026-11-25
+- Contexte (app `yue2-ios`, chanson « Wrinkles and Rain », `s20261111194931`, `cot: full`, sans `abc`, `8bit-lean`, graine 310862, 2/4 à 75 BPM, plafond 300 s, 251 s rendues, `truncated: false`, 6 281 jetons). Vincent : la chanson est parfaite et finit musicalement bien, mais la dernière phrase n'est pas chantée. Il pensait d'abord à « allonge de 10 secondes » ; c'est le placement des paroles qui est en cause. Dossier : `.local-runs/songs/s20261111194931/` du dépôt de l'app (`state.json`, `plan/score.abc`, `semantic.npy`, `latent.npy`, `audio.m4a` ; `timeline.json` relevé sur l'iPhone le 2026-11-25).
+- **Constat.** La demande contient la ligne (dernière de `[Outro]`, 4 syllabes, après quatre lignes d'environ 15 + 12 + 15 + 12 syllabes). Le plan écrit huit sections chantées puis :
+  - `% chorus` final : 16 mesures, 61 notes, deux moitiés de 8 mesures ; les quatre premières lignes de `[Outro]` y sont chantées (Whisper medium, 217,2 → 243,2 s).
+  - `% outro` : 4 mesures, **0 note** dans la voix (`z16` partout), l'instrument seul. La cinquième ligne n'a donc pas de mesure à elle, et Whisper n'entend plus rien après 243,2 s.
+  - L'app n'a rien coupé : ni les paroles envoyées, ni la durée (la génération s'arrête d'elle-même, loin du plafond).
+- **L'alignement la donne comme chantée.** `timeline.json` (coût 647) place la ligne à 248,3–250,4 s, sur la dernière mesure, et l'app l'affiche donc là ; mais ses quatre mots y sont `onScore: false`, `notes: 0`. Whisper, sur les 13, 8 puis 5 dernières secondes isolées, n'entend rien après 242,7 s.
+- **`onScore` seul ne suffit pas comme alarme.** Sur 172 timelines gardées par l'app (1 959 lignes), 229 lignes ont tous leurs mots hors partition, surtout dans les chansons mal alignées (coût > 2 000) ; non vérifié à l'oreille.
+- **La même dernière ligne ailleurs.** Sept versions de ce texte sont alignées (celle-ci en `full`, six reprises en `melody` avec partition imposée) : la dernière ligne est entièrement hors partition dans trois (dont celle-ci), à un mot près dans deux, sur la partition dans deux. Les six autres n'ont pas été écoutées pour ce point.
+- **Fréquence.** Dans les 52 chansons `cot: full` sans partition imposée que l'app a gardées, 6 finissent leurs paroles par `[Outro]` ; celle-ci est la seule dont l'outro du plan n'a aucune note. Un simple compte ne voit pas le défaut (61 notes pour ≈ 58 syllabes dans la section, mélismes compris) : seule l'écoute ou l'alignement le voit.
+- Questions :
+  1. **À la planification.** La cause est-elle connue (ligne courte et isolée en fin de `[Outro]`, `% chorus` écrit à la place de `% outro`) ? Le rejeu du plan seul sur plusieurs graines dit-il à quelle fréquence la dernière ligne reste sans notes, et un levier (balise, ligne vide, section `[Outro]` dédiée à la ligne) la fait-il chanter ?
+  2. **Le détecter avant le rendu.** Le plan prend ~2 s, la suite plusieurs minutes. Peut-on savoir dès le plan quelles lignes ont des notes (ligne → mesures), pour replanifier avec une autre graine ou prévenir la personne ? Côté timeline, la ligne est placée malgré l'absence de voix : un coût ou une confiance **par ligne** (et non pour la chanson entière) séparerait-il « chantée » de « placée par défaut », pour que l'app n'affiche pas une ligne muette comme chantée ?
+  3. **Réparer une chanson finie sans la changer.** Garder tout jusqu'à 243,2 s (trame ≈ 6 080) et faire chanter la ligne sur les 4 mesures d'outro : `.regenerate` avec une partition **modifiée après la coupe** (notes de voix écrites dans l'outro, Q8 : reprise au pas près) et les mêmes paroles est-il dans le contrat, et le préfixe sémantique reste-t-il alors valable ? Si oui, quelle forme exacte (le plan entier réimposé, ou seulement la queue) ?
+  4. **Allonger.** Une partition prolongée de N mesures après la fin peut-elle être imposée à une suite (`.regenerate` dont la durée dépasse celle de la source), ou l'édition est-elle bornée à la longueur de la source ? Combien de secondes au plus, et les latents au-delà sont-ils synthétisés sans raccord audible ?
+
+### Réponse (2026-11-25, moteur 1.12.0)
+**En bref : pas de chance.** Sur ce texte, la dernière ligne est chantée sur 5 graines sur 6 (la 6ᵉ est coupée par le plafond de 300 s) : c'est un tirage malheureux, pas un défaut à corriger. Le plus simple côté app reste de relancer une graine. Les outils ci-dessous (attention par ligne, réparation par `regenerate(score:)`, allongement borné) sont publiés en 1.12.0 pour les cas où l'on tient à garder la chanson.
+
+Banc sur le Mac (`8bit-lean`, mêmes poids que l'iPhone), dossier `.local-runs/bench.noindex/q18/` du dépôt moteur. Une ligne compte comme chantée quand Whisper medium l'entend sur le rendu.
+- Contrôle : sur la fin de l'iPhone, et sur un rendu Mac fait avec les mêmes jetons, Whisper n'entend pas « But what to do? ».
+- Le plan rejoué avec la graine 310862 sort identique à celui de l'iPhone jusque vers la mesure 130, une fois l'intro raccourcie comme dans l'app. Ensuite le calcul diverge un peu. Les réparations partent donc des fichiers de l'iPhone (`plan/`, `semantic.npy`, `latent.npy`).
+
+1. **Planification : un tirage, pas un défaut systématique.** Le même texte, sur 6 graines (plan + sémantique, rendu brouillon, Whisper sur les 30 dernières secondes) :
+   - la dernière ligne est chantée sur 5 graines (310862 sur le Mac, 1, 2, 3, 4) ;
+   - la 6ᵉ atteint le plafond de 300 s avant la fin ;
+   - le plan écrit souvent une outro sans note (graines 1, 3 et 4), et la ligne est chantée quand même.
+   - La ligne collée à la précédente n'apporte rien : chantée sur 2 graines, entendue partiellement sur 1, 2 coupées au plafond, 1 non jugée.
+   - Aucun levier de planification n'est donc à prévoir pour cette chanson.
+   - Côté allure : la règle d'une syllabe par croche, mesurée sur des partitions imposées, ne s'applique pas ici (`cot: full`). Elle donnerait une fin vers 188 s, la fin réelle est à 243 s.
+2. **Détecter avant le rendu : pas de signal fiable pour la dernière ligne.**
+   - Le plan ne relie pas les lignes aux mesures. Une outro à 0 note ne prédit rien (point 1).
+   - J'ai ajouté `attention` par mot et par ligne dans la timeline : l'attention moyenne de la tête « mot » du LM, de 0 à 1. Vérifiée avec Whisper sur 15 chansons (anglais et français, 4, 8 et 16 bits) :
+     - à partir de 0,35, la ligne est chantée ;
+     - basse au milieu d'une chanson, elle ne l'est pas (lignes sautées ou inintelligibles, 0,00 à 0,12, sur 2 chansons) ;
+     - **basse sur la dernière ligne, elle ne dit rien.** La ligne non chantée de l'iPhone est à 0,02, mais des dernières lignes chantées sont à 0 ou 0,01 : 4 graines du point 1, « Mais, que veux-tu? » sur 2 graines de la version française, la fin de City Lights en 4 et 16 bits.
+   - `onScore` ne tranche pas non plus : « Mais, que veux-tu? » est chantée hors partition.
+   - Pour la dernière ligne, il faut donc l'entendre. Avec la 1.11.0, un brouillon NAR coûte environ 9 évaluations. La reconnaissance vocale sur l'appareil se fait côté app ; le moteur n'en a pas.
+   - Le champ est optionnel : un `timeline.json` existant se relit tel quel.
+   - Autre constat : `karaoke` échoue sur deux reprises de l'app (`s20261115103908`, `s20261115153051`, « ABC: unparsed text at [K:A,B] »). Le lecteur de partition ne lit pas ce changement de tonalité en ligne. C'est à corriger dans le moteur, mais ce n'est pas encore fait.
+3. **Réparer : oui, c'est maintenant dans le contrat.**
+   - API : `regenerate(song, fromFrame:, seed:, score:)`. En ligne de commande : `yue2 regenerate --score edited.abc`, plus `--draft` pour auditionner.
+   - Forme : le plan **entier** réimposé, modifié seulement après la coupe. Notes écrites dans `V: Vocal` de l'outro, `V: Ins` laissé tel quel.
+   - Les jetons de la partition restent ceux du plan jusqu'à la première ligne changée (`SymbolicPlan.replacingScore(_:tokenizer:)`, utilisable aussi avant l'étape sémantique). Sur cette chanson, le premier jeton différent est le 2 325 sur 2 388, dans l'outro. Le préfixe est reconstruit autour.
+   - Les jetons sémantiques et les latents gardés restent valables et sortent bit à bit identiques (écart max 0,0 sur 6 075 trames). En revanche, toute la chanson est désormais conditionnée par la nouvelle partition.
+   - Couper au début d'une mesure lu dans `timeline.json` : ici la mesure 152, à 243,0 s, trame 6 075.
+   - Essai : « But what to do? » sur `z4B4c4d4|c16-|c8B8-|B8z8|`. Whisper entend la ligne sur la graine 3 (en entier) et sur la graine 1 (sans « But ») ; la graine 2 ne la chante pas. Il faut donc auditionner la réparation en brouillon avant le rendu complet.
+   - Rendu complet de la graine 3 envoyé à Vincent ; c'est son écoute qui tranchera. La chanson réparée fait 13 trames de moins, et ses 7 dernières secondes, instrument compris, sont nouvelles.
+   - Coût :
+     - la réparation repasse par midpoint, car le masque des trames gardées exclut AB2 ;
+     - c'est donc une synthèse complète à 64 évaluations : environ 61 min sur l'iPhone pour ces 251 s ;
+     - `--draft` / `quality: .draft` donne 16 évaluations, environ 15 min ;
+     - la partie sémantique reste courte : préremplissage d'environ 9 000 jetons, plus 150 à 200 jetons.
+4. **Allonger : oui, borné.**
+   - API : `RegenerateLength.extended(frames:)`. En ligne de commande : `--extend-seconds N`. La chanson peut grandir de N secondes au plus, dans la limite du `maxTokens` de l'appelant ; l'AR peut s'arrêter avant.
+   - Une seule tranche NAR : préfixe + trames ≤ 24 576 (environ 860 s avec ce préfixe). Une longueur trop grande est refusée avant l'étape AR.
+   - Essai avec 4 mesures ajoutées et `--extend-seconds 15` : 6 419 trames (+5,5 s), parties gardées identiques. La ligne est chantée deux fois, parce que j'avais aussi écrit des notes dans les mesures ajoutées ; pour une fin instrumentale, n'écrire que `V: Ins`.
+   - La jonction est continue par construction (même masque que regenerate), mais rien n'est encore écouté.

@@ -48,6 +48,9 @@ public struct LyricTimeline: Codable, Equatable, Sendable {
         /// False when the word is timed by the voice alone (it does not sit on the score's notes).
         public var onScore: Bool
         public var syllables: [Syllable]
+        /// The LM's word-head attention on this word while it is sung (0…1, attention clock
+        /// only; nil otherwise and for the song's last word). See `Line.attention`.
+        public var attention: Double? = nil
     }
 
     public struct Line: Codable, Equatable, Sendable {
@@ -58,6 +61,12 @@ public struct LyricTimeline: Codable, Equatable, Sendable {
         public var bar: Int
         public var beat: Double
         public var words: [Word]
+        /// Mean `Word.attention` of the line (nil without the attention clock). A hint, not a
+        /// verdict (ASK Q18, 15 songs checked with Whisper): ≥ 0.35 the line was sung; low inside
+        /// the song, it was not (garbled or skipped lines, 0.0–0.12); low on the song's **last**
+        /// line it says nothing — sung final lines also score 0–0.02 (the word head has no next
+        /// word to move to). Judge a final line on the audio.
+        public var attention: Double? = nil
     }
 
     /// A bar of the score: its downbeat and the start of each of its beats, in seconds.
@@ -216,7 +225,7 @@ public struct LyricTimeline: Codable, Equatable, Sendable {
     public static func build(
         abc: String, lyrics: String, language: Language = .english,
         grid points: [GridPoint]? = nil, heard: [HeardNote] = [], anchors: [Double?]? = nil,
-        duration: Double? = nil, clockSource: String? = nil
+        wordAttention: [Double?]? = nil, duration: Double? = nil, clockSource: String? = nil
     ) throws -> LyricTimeline {
         let score = try ABCScore(abc)
         let clock = Clock(score: score, points: points, heard: heard)
@@ -354,12 +363,16 @@ public struct LyricTimeline: Codable, Equatable, Sendable {
                                         firstNote: groups[k].lowerBound, bar: p.bar, beat: p.beat)
                     }
                 }
+                let attention = wordAttention.flatMap { w < $0.count ? $0[w] : nil }
                 words.append(Word(text: word.text, start: sy.first!.start, end: sy.last!.end,
-                                  bar: sy.first!.bar, beat: sy.first!.beat, onScore: !offScore.contains(w), syllables: sy))
+                                  bar: sy.first!.bar, beat: sy.first!.beat, onScore: !offScore.contains(w), syllables: sy,
+                                  attention: attention))
                 w += 1
             }
+            let read = words.compactMap(\.attention)
             lines.append(Line(text: line.text, section: line.section, start: words.first!.start, end: words.last!.end,
-                              bar: words.first!.bar, beat: words.first!.beat, words: words))
+                              bar: words.first!.bar, beat: words.first!.beat, words: words,
+                              attention: read.isEmpty ? nil : read.reduce(0, +) / Double(read.count)))
         }
         // Syllables never overlap: one that runs into the next (a melisma whose last note the next
         // syllable shares) ends where the next one starts. Words and lines end with their last.

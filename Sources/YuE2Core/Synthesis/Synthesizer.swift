@@ -90,6 +90,9 @@ public struct Synthesizer {
             guard resume.steps == resolvedSteps, (0..<resolvedSteps).contains(resume.step) else {
                 throw YuE2Error.invalidRequest("NAR checkpoint (step \(resume.step)/\(resume.steps)) does not match this solve (\(resolvedSteps) steps)")
             }
+            if let written = resume.method, written != config.method {
+                throw YuE2Error.invalidRequest("NAR checkpoint was written by a \(written.rawValue) solve, this one is \(config.method.rawValue)")
+            }
             guard resume.state.shape == chunks[0].noise.shape else {
                 throw YuE2Error.invalidRequest("NAR checkpoint state \(resume.state.shape) does not match this song's latents \(chunks[0].noise.shape)")
             }
@@ -111,9 +114,11 @@ public struct Synthesizer {
             let chunkProgress = onProgress.map { report in
                 { (completed: Int, total: Int) in report(chunkIndex * total + completed, totalSteps) }
             }
-            let stepCallback: ((Int, MLXArray) -> Void)? = onStep.map { report in
-                { completed, state in
-                    report(NARCheckpoint(chunkIndex: chunkIndex, step: completed, steps: resolvedSteps, state: state))
+            let stepCallback: ((Int, MLXArray, MLXArray?) -> Void)? = onStep.map { report in
+                { completed, state, velocity in
+                    report(NARCheckpoint(
+                        chunkIndex: chunkIndex, step: completed, steps: resolvedSteps, state: state,
+                        previousVelocity: velocity, method: config.method))
                 }
             }
             var initialState = resume?.state
@@ -148,7 +153,10 @@ public struct Synthesizer {
             outputs.append(try engine.solve(
                 steps: resolvedSteps,
                 initialState: initialState, startStep: startStep,
-                onProgress: chunkProgress, cancel: cancel, onStep: stepCallback, keep: keep))
+                onProgress: chunkProgress, cancel: cancel, onStep: stepCallback, keep: keep,
+                method: config.method,
+                // A checkpoint taken before this edit's start, or under midpoint, carries none.
+                previousVelocity: startStep == resume?.step ? resume?.previousVelocity : nil))
             YuE2MemoryManager.releaseBetweenStages()
         }
         return concatenated(outputs, axis: 0)

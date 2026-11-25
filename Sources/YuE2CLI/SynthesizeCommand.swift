@@ -30,10 +30,16 @@ struct SynthesizeCommand: AsyncParsableCommand {
     @Option(name: .long, help: "Flow-matching ODE steps (overrides the checkpoint default).")
     var odeSteps: Int?
 
+    @Option(name: .long, help: "NAR integrator: midpoint (reference, 2 evaluations per step) or ab2 (Adams–Bashforth 2, steps + 1 evaluations).")
+    var odeMethod: ODEMethod?
+
+    @Flag(name: .long, help: "Draft NAR: AB2 at 8 steps (9 network calls instead of 33); solve the same tokens again without it for the full render.")
+    var draft = false
+
     @Option(name: .long, help: "Output directory for the song's artifacts.")
     var out: String
 
-    @Option(name: .long, help: "Directory for the per-step NAR checkpoint (nar-checkpoint.json + nar-state.npy), written after every ODE step and cleared on success.")
+    @Option(name: .long, help: "Directory for the per-step NAR checkpoint (nar-checkpoint.json + nar-state-<chunk>-<step>-<id>.npy), written after every ODE step and cleared on success.")
     var checkpointDir: String?
 
     @Flag(name: .long, help: "Resume the NAR solve from the checkpoint in --checkpoint-dir (same plan, semantic tokens, seed and steps).")
@@ -55,7 +61,12 @@ struct SynthesizeCommand: AsyncParsableCommand {
             modelsDir: modelsDir, quant: modelOptions.quant, quantizeHead: modelOptions.quantHead,
             precision: modelOptions.precision)
         let vaeModel = try YuE2VAE.load(directory: modelsDir.appendingPathComponent(vae.model.directoryName))
-        let config = try resolveConfig(session.config, odeSteps: odeSteps)
+        if draft, odeSteps != nil || odeMethod != nil {
+            throw YuE2Error.invalidRequest("--draft fixes the NAR schedule; drop --ode-steps / --ode-method")
+        }
+        let config = try resolveConfig(
+            session.config, odeSteps: draft ? YuE2ReferenceProfile.draftODESteps : odeSteps,
+            odeMethod: draft ? .ab2 : odeMethod)
 
         let synthesizer = Synthesizer(model: session.model, config: config)
         let checkpointURL = checkpointDir.map { URL(fileURLWithPath: $0) }

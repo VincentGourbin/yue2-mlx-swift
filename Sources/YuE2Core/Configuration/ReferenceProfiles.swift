@@ -27,6 +27,9 @@ public struct YuE2ReferenceProfile: Sendable, Identifiable, Equatable {
     public let memoryProfile: YuE2MemoryManager.Profile
     /// `nil` = the checkpoint's default (32 midpoint steps).
     public let odeSteps: Int?
+    /// NAR integrator. AB2 halves the network calls at 32 steps (33 instead of 64); judged
+    /// identical by ear to midpoint in bf16 and in the fp16 packed iPhone profile (2026-11-21).
+    public let odeMethod: ODEMethod
     /// Fixed MLX cache / GC-threshold (MB) on the mobile profile; `nil` = adaptive sizing.
     public let mobileLimitsMB: (cache: Int, limit: Int)?
     public let summary: String
@@ -35,13 +38,14 @@ public struct YuE2ReferenceProfile: Sendable, Identifiable, Equatable {
         bits: Bits, kind: Kind, quant: YuE2Quantization, quantizeHead: Bool, precision: YuE2ComputePrecision,
         narCompute: YuE2ExecutionPolicy.NARCompute, compiledDecode: Bool, vaePrecision: VAEPrecision,
         vaeCoreFrames: Int, releaseWeightsBetweenStages: Bool, memoryProfile: YuE2MemoryManager.Profile,
-        odeSteps: Int?, mobileLimitsMB: (cache: Int, limit: Int)? = nil, summary: String
+        odeSteps: Int?, odeMethod: ODEMethod = .midpoint, mobileLimitsMB: (cache: Int, limit: Int)? = nil,
+        summary: String
     ) {
         self.bits = bits; self.kind = kind; self.quant = quant; self.quantizeHead = quantizeHead
         self.precision = precision; self.narCompute = narCompute; self.compiledDecode = compiledDecode
         self.vaePrecision = vaePrecision; self.vaeCoreFrames = vaeCoreFrames
         self.releaseWeightsBetweenStages = releaseWeightsBetweenStages; self.memoryProfile = memoryProfile
-        self.odeSteps = odeSteps; self.mobileLimitsMB = mobileLimitsMB; self.summary = summary
+        self.odeSteps = odeSteps; self.odeMethod = odeMethod; self.mobileLimitsMB = mobileLimitsMB; self.summary = summary
     }
 
     public static func == (a: YuE2ReferenceProfile, b: YuE2ReferenceProfile) -> Bool { a.id == b.id }
@@ -61,6 +65,35 @@ public struct YuE2ReferenceProfile: Sendable, Identifiable, Equatable {
         YuE2ExecutionPolicy.compiledDecode = compiledDecode
     }
 
+    /// How much of the NAR solve to pay for. `.full` is the profile's schedule; `.draft` is AB2 at
+    /// `draftODESteps` steps (9 network calls instead of 33; a `.keep` edit such as regenerate falls
+    /// back to midpoint, so 16 there, never auditioned): judged « top » by ear on a 251 s song in
+    /// 8 bits, then good in 4 and 16 bits; its latents drift from the full solve about as much as swapping 8-bit weights
+    /// for 4-bit ones (rel. distance 0.105–0.114 vs 0.094), for 8–10× less NAR time at the same
+    /// peak memory (2026-11-22, `docs/knowledge/log.md`). Only the NAR changes: plan, semantic
+    /// tokens and VAE are the same, so a draft is upgraded by solving the same tokens again.
+    public enum NARQuality: String, CaseIterable, Sendable { case full, draft }
+
+    /// ODE steps of a `.draft` solve (AB2, midpoint under `.keep`).
+    public static let draftODESteps = 8
+
+    /// `base` with this profile's NAR schedule (ODE method, and steps when pinned), or the draft
+    /// schedule. Every caller that solves under a profile goes through it: `applyGlobalPolicy()`
+    /// does not carry the per-call knobs, so a config built by hand silently stays on the
+    /// checkpoint's midpoint.
+    public func generationConfig(_ base: GenerationConfig, quality: NARQuality = .full) -> GenerationConfig {
+        var config = base
+        switch quality {
+        case .full:
+            if let odeSteps { config.odeSteps = odeSteps }
+            config.odeMethod = odeMethod.rawValue
+        case .draft:
+            config.odeSteps = Self.draftODESteps
+            config.odeMethod = ODEMethod.ab2.rawValue
+        }
+        return config
+    }
+
     public static func named(_ id: String) -> YuE2ReferenceProfile? {
         all.first { $0.id == id }
     }
@@ -78,38 +111,38 @@ public struct YuE2ReferenceProfile: Sendable, Identifiable, Equatable {
         YuE2ReferenceProfile(
             bits: .four, kind: .fast, quant: .int4Mixed, quantizeHead: true, precision: .bf16,
             narCompute: .dequantized, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 640,
-            releaseWeightsBetweenStages: false, memoryProfile: .mac, odeSteps: nil,
+            releaseWeightsBetweenStages: false, memoryProfile: .mac, odeSteps: nil, odeMethod: .ab2,
             summary: "int4-mixed-head pack (2.5 GB), everything resident, NAR dequantized to bf16 for the solve"),
         YuE2ReferenceProfile(
             bits: .four, kind: .lean, quant: .int4Mixed, quantizeHead: true, precision: .fp16,
             narCompute: .packed, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 256,
-            releaseWeightsBetweenStages: true, memoryProfile: .mobile, odeSteps: nil,
+            releaseWeightsBetweenStages: true, memoryProfile: .mobile, odeSteps: nil, odeMethod: .ab2,
             summary: "int4-mixed-head pack, stage-scoped residency, packed NAR, fp16, VAE tile 256, mobile limits — the iPhone profile"),
         YuE2ReferenceProfile(
             bits: .four, kind: .tiny, quant: .int4Mixed, quantizeHead: true, precision: .fp16,
             narCompute: .packed, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 64,
-            releaseWeightsBetweenStages: true, memoryProfile: .mobile, odeSteps: nil,
+            releaseWeightsBetweenStages: true, memoryProfile: .mobile, odeSteps: nil, odeMethod: .ab2,
             mobileLimitsMB: (cache: 256, limit: 3072),
             summary: "int4-mixed-head pack, 4bit-lean plus a 64-frame VAE tile and a 256 MB cache: ≈ 2.6 GB peak for +29 % time, same audio — the most constrained devices"),
         YuE2ReferenceProfile(
             bits: .eight, kind: .fast, quant: .qint8All, quantizeHead: true, precision: .bf16,
             narCompute: .dequantized, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 640,
-            releaseWeightsBetweenStages: false, memoryProfile: .mac, odeSteps: nil,
+            releaseWeightsBetweenStages: false, memoryProfile: .mac, odeSteps: nil, odeMethod: .ab2,
             summary: "qint8-all-head pack (3.5 GB), everything resident, NAR dequantized to bf16"),
         YuE2ReferenceProfile(
             bits: .eight, kind: .lean, quant: .qint8All, quantizeHead: true, precision: .fp16,
             narCompute: .packed, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 256,
-            releaseWeightsBetweenStages: true, memoryProfile: .mobile, odeSteps: nil,
+            releaseWeightsBetweenStages: true, memoryProfile: .mobile, odeSteps: nil, odeMethod: .ab2,
             summary: "qint8-all-head pack, stage-scoped residency, packed NAR, fp16, VAE tile 256, mobile limits"),
         YuE2ReferenceProfile(
             bits: .sixteen, kind: .fast, quant: .none, quantizeHead: false, precision: .bf16,
             narCompute: .packed, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 640,
-            releaseWeightsBetweenStages: false, memoryProfile: .mac, odeSteps: nil,
+            releaseWeightsBetweenStages: false, memoryProfile: .mac, odeSteps: nil, odeMethod: .ab2,
             summary: "bf16 checkpoint (7.3 GB), everything resident, Mac caches"),
         YuE2ReferenceProfile(
             bits: .sixteen, kind: .lean, quant: .none, quantizeHead: false, precision: .bf16,
             narCompute: .packed, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 256,
-            releaseWeightsBetweenStages: true, memoryProfile: .mac, odeSteps: nil,
+            releaseWeightsBetweenStages: true, memoryProfile: .mac, odeSteps: nil, odeMethod: .ab2,
             summary: "bf16 checkpoint, stage-scoped residency, VAE tile 256 — Mac caches (mobile limits thrash a bf16 working set)"),
     ]
 }

@@ -83,6 +83,25 @@ public struct Sampling: Codable, Equatable, Sendable {
     }
 }
 
+/// The NAR flow-matching integrator. `midpoint` is the reference (`nar.py`). `ab2` is an
+/// extension of this port (2026-11-21, after Riff/audio.cpp and YuE2-Studio): Adams–Bashforth 2,
+/// a midpoint first step and then one velocity evaluation per step extrapolated with the previous
+/// one, `x ← x − dt·(3/2·v_n − 1/2·v_{n−1})` — `steps + 1` evaluations instead of `2·steps`.
+public enum ODEMethod: String, CaseIterable, Sendable {
+    case midpoint
+    case ab2
+
+    /// Velocity evaluations one solve of `steps` steps costs from `startStep`, from a cold start:
+    /// an AB2 resume that carries its checkpoint's velocity skips the bootstrap (one fewer).
+    public func evaluations(steps: Int, startStep: Int = 0) -> Int {
+        let remaining = Swift.max(0, steps - startStep)
+        switch self {
+        case .midpoint: return 2 * remaining
+        case .ab2: return remaining == 0 ? 0 : remaining + 1
+        }
+    }
+}
+
 /// Versioned generation defaults, checkpoint-native (`yue2_generation_config.json`).
 ///
 /// Mirrors `GenerationConfig` in `protocol.py`.
@@ -90,8 +109,13 @@ public struct GenerationConfig: Codable, Equatable, Sendable {
     public var abc: Sampling
     public var semantic: Sampling
     public var odeSteps: Int
+    /// `"midpoint"` (the reference, 2 velocity evaluations per step) or `"ab2"` (this port's
+    /// extension, `ODEMethod.ab2`: steps + 1 evaluations).
     public var odeMethod: String
     public var context: Int
+
+    /// `odeMethod` as the typed integrator (validated at init).
+    public var method: ODEMethod { ODEMethod(rawValue: odeMethod) ?? .midpoint }
     public var version: String
 
     /// `Sampling(.7, .9, 30, 1.005, 100, 32, 4096)` in the reference.
@@ -109,8 +133,8 @@ public struct GenerationConfig: Codable, Equatable, Sendable {
         context: Int = YuE2Token.context,
         version: String = YuE2Token.protocolVersion
     ) throws {
-        guard context == YuE2Token.context, odeMethod == "midpoint", odeSteps >= 1 else {
-            throw YuE2Error.invalidRequest("Require context=24576 and midpoint with positive integer steps")
+        guard context == YuE2Token.context, ODEMethod(rawValue: odeMethod) != nil, odeSteps >= 1 else {
+            throw YuE2Error.invalidRequest("Require context=24576, ode_method midpoint or ab2, and positive integer steps")
         }
         self.abc = abc
         self.semantic = semantic
