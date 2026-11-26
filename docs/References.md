@@ -10,12 +10,12 @@ Source: `Sources/YuE2Core/Configuration/ReferenceProfiles.swift`. Measurements: 
 
 | Id | Pack | Compute | Time | Peak process | Who it is for |
 |---|---|---|---|---|---|
-| `4bit-fast` | `int4-mixed-head` (2.5 GB) | everything resident, NAR dequantized to bf16, VAE fp16 tile 1024, Mac caches | **65.7 s** | 8.9 GB | Mac: the only profile faster than real time at 32 steps |
+| `4bit-fast` | `int4-mixed-head` (2.5 GB) | everything resident, NAR dequantized to bf16, VAE fp16 tile 640, Mac caches | **65.7 s** | 8.9 GB | Mac: the only profile faster than real time at 32 steps |
 | `4bit-lean` | `int4-mixed-head` | stage-scoped residency, packed NAR, fp16, VAE fp16 tile 256, mobile limits | 77.7 s | **3.4 GB** | iPhone 15 Pro Max and any 8 GB Mac |
 | `4bit-tiny` | `int4-mixed-head` | `4bit-lean` plus a 64-frame VAE tile and a fixed 256 MB cache / 3 GB threshold | 94.8 s | **2.6 GB** | the most constrained devices; same audio as `4bit-lean` |
-| `8bit-fast` | `qint8-all-head` (3.5 GB) | everything resident, NAR dequantized to bf16, VAE fp16/1024 | 76.5 s | 9.9 GB | Mac, when the AR path must stay 8-bit |
+| `8bit-fast` | `qint8-all-head` (3.5 GB) | everything resident, NAR dequantized to bf16, VAE fp16/640 | 76.5 s | 9.9 GB | Mac, when the AR path must stay 8-bit |
 | `8bit-lean` | `qint8-all-head` | residency, packed NAR, fp16, VAE fp16/256, mobile limits | 79.3 s | 4.4 GB | iPhone 8 GB with headroom, 8-16 GB Macs |
-| `16bit-fast` | bf16 (7.3 GB) | everything resident, VAE fp16/1024 | 84.9 s | 12.0 GB | quality reference |
+| `16bit-fast` | bf16 (7.3 GB) | everything resident, VAE fp16/640 | 84.9 s | 12.0 GB | quality reference |
 | `16bit-lean` | bf16 | stage-scoped residency, VAE fp16/256, Mac caches | 84.9 s | 6.9 GB | 16-24 GB Macs |
 
 `4bit-tiny` is the answer to "even less memory": the 8-bit NAR (1.43 GB) dominates every quantized pack, so lower AR bits buy little (3-bit: −0.2 GB, at the limit by ear; 2-bit: −0.4 GB, no longer music) while a smaller VAE tile and a smaller cache buy 0.8 GB at no quality cost, for +29 % time.
@@ -29,7 +29,7 @@ Quick read: 4-bit is fastest because the autoregressive phases (score, then sema
 | Pack (`quant`, `quantizeHead`) | `none` bf16 · `qint8-all` + head · `int4-mixed` + head | Weights on disk and in memory. `int4-mixed` = AR path, embeddings and head in 4 bits, NAR path in 8 bits (a 4-bit NAR fails parity: the error compounds over 64 evaluations). `+head` = quantized `lm_head`, computed by `quantizedMatmul` on the rows the phase allows. |
 | `precision` | `bf16` · `fp16` | Dtype of floating parameters and activations. fp16 for the iPhone (GPU and Neural Engine); bf16 on Mac. Both validated by listening. |
 | `narCompute` | `packed` · `dequantized` | `packed` runs the NAR projections through `quantizedMatmul` (minimal memory). `dequantized` expands them once to bf16 before the solve: +1.4 GB for an 8-bit NAR, ≈ 10 % less NAR time on Mac (the quantized matmul is slower than a bf16 GEMM on large activations). Numerical gap 1.3 % (weights rounded to bf16), inside the parity budget. |
-| `vaePrecision`, `vaeCoreFrames` | fp16 · fp32; 256 · 1024 | The Oobleck decoder in fp16 is inaudible against fp32 (SNR 53-57 dB) and faster. The tile sets the transient decode peak: 1024 ≈ 2.9 GB active in fp16, 256 ≈ 2.0 GB. |
+| `vaePrecision`, `vaeCoreFrames` | fp16 · fp32; 256 · 640 | The Oobleck decoder in fp16 is inaudible against fp32 (SNR 53-57 dB) and faster. The tile sets the transient decode peak: 1024 ≈ 2.9 GB active in fp16, 256 ≈ 2.0 GB. The `fast` profiles use 640 since 1.12.1: on an M5 (MLX NAX kernels) fp16 tiles of 704-1280 frames emitted NaN; output is bit-identical at every tile size, and a non-finite tile is re-decoded at half the size. |
 | `releaseWeightsBetweenStages` | bool | Stage-scoped residency: AR path alone at load, AR → NAR swap once the prefix cache is ready, whole LM released before the VAE. The memory budget becomes the largest stage instead of the sum. Zero time cost (measured A/B/B/A). |
 | `memoryProfile` | `mac` · `mobile` | MLX caches per stage (Mac: 2 / 4 / 1 GB) or limits sized from available memory (mobile: cache ≈ 1 GB, GC threshold = available − 1.25 GB). Mobile limits thrash a bf16 working set: `16bit-lean` stays on `mac`. |
 | `mobileLimitsMB` | nil · (256, 3072) | Fixed MLX cache and GC threshold on the mobile profile instead of the adaptive sizing (`4bit-tiny`). |

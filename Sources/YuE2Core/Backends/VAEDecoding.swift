@@ -44,19 +44,19 @@ extension YuE2VAE: VAEDecoding {}
 /// memory; only a genuinely bad shape pays for a second pass. Retries stop here: a non-finite
 /// result at that size comes from the data (e.g. an fp16-overflowing latent), not from a kernel
 /// shape, and is left to the exporter's non-finite sanitisation.
-public let vaeMinRetryCoreFrames = 64
+let vaeMinRetryCoreFrames = 64
 
 /// Whether an already-materialised crop is entirely finite. Checking the crop (not the full
 /// tile) matters: NaNs confined to the halo are discarded by the crop and never reach the WAV.
 /// Issue #4 instrumentation showed that forcing materialisation *inside* the decoder can change
 /// which window produces NaNs, so this reduction is deliberately done after `eval(crop)`.
-public func vaeCropIsFinite(_ crop: MLXArray) -> Bool {
+func vaeCropIsFinite(_ crop: MLXArray) -> Bool {
     MLX.all(MLX.isFinite(crop)).item(Bool.self)
 }
 
 /// One step of the issue #4 retry policy: `nil` means the current pass is final. Pure and
 /// backend-independent so both `decodeTiled` entry points (and their tests) share one decision.
-public func nextVAECoreFrames(current: Int, foundNonFinite: Bool) -> Int? {
+func nextVAECoreFrames(current: Int, foundNonFinite: Bool) -> Int? {
     guard foundNonFinite, current > vaeMinRetryCoreFrames else { return nil }
     return max(vaeMinRetryCoreFrames, current / 2)
 }
@@ -65,7 +65,7 @@ public func nextVAECoreFrames(current: Int, foundNonFinite: Bool) -> Int? {
 /// instead of hiding it behind `YUE2_DEBUG`. Enabling `YUE2_DEBUG` also turns on debug-only
 /// `isFinite` assertions inside `SnakeBeta`, which trap before the crop is ever checked — the
 /// reason verification runs without it.
-public func logVAETileRetry(from current: Int, to next: Int) {
+func logVAETileRetry(from current: Int, to next: Int) {
     FileHandle.standardError.write(
         Data("yue2: non-finite VAE tile at \(current) core frames; re-decoding at \(next)\n".utf8))
 }

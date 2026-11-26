@@ -78,3 +78,4 @@
   - **Bogue vu au passage, pas corrigé** : `ABCScore` ne lit pas `[K:A,B]` en ligne, et `karaoke` échoue sur deux reprises de l'app.
   - La règle d'une syllabe par croche (2026-11-10, partitions imposées) ne se transpose pas à un plan `cot: full` : 188 s prévues, 243 s réelles.
   - Rendus dans `.local-runs/bench.noindex/q18/`.
+- 2026-11-25 — **PR #6 (Simon Law, @ramishi) fusionnée** : NaN du VAE fp16 sur M5 (noyaux NAX de MLX, génération GPU ≥ 17, ≥ 18 pour les téléphones ; jamais vu sur le M3 Max, sortie identique au bit à toutes les tuiles), export WAV qui remplace les non-finis par du silence, profils `fast` à 640, nouvelle tentative à demi-tuile. Remarques laissées : symboles `public`, progression qui repart à zéro, pic +0,4 Go à 640 sur M3 Max ; `warnings` dans `result.json` à faire chez nous ; issues #5 et #7 ouvertes.
