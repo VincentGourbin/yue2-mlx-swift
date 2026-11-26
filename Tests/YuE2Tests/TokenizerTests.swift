@@ -81,6 +81,33 @@ struct TokenizerTests {
         }
     }
 
+    @Test func promptSegmentsShareATokenSpellingTwoHanCharacters() throws {
+        // Issue #7: one word per character; the tokenizer merges some of them into one token.
+        let abc = """
+            X:1
+            M:4/4
+            L:1/8
+            Q:1/4=120
+            V: Vocal clef=treble name="Vocal Melody" snm="Vocal"
+            V: Ins clef=treble name="Ins Melody" snm="Inst."
+            K:C
+            V: Vocal
+            c2d2e2f2|g2a2b2c'2|
+            V: Ins
+            Z2|
+            """
+        let lyrics = "[Verse]\n今天天氣很好我們一起去公園"
+        let request = try SongRequest(style: "Mandopop", lyrics: lyrics, abc: abc)
+        let prefix = try Prefixes.tokenPrefixes(request: request, tokenizer: tokenizer)
+        let segments = try AttentionTimeline.segments(prefix: prefix, tokenizer: tokenizer, lyrics: lyrics, language: .english)
+        let parsed = LyricTimeline.parseLyrics(lyrics, language: .english).flatMap(\.words)
+        #expect(parsed.count == 13 && segments.wordSegment.count == 13)
+        #expect(segments.words >= 2 && segments.words <= 13 && segments.wordSegment.last == segments.words - 1)
+        #expect(zip(segments.wordSegment, segments.wordSegment.dropFirst()).allSatisfy { $1 == $0 || $1 == $0 + 1 })
+        let seen = Set(segments.ids.filter { $0 >= segments.bars })
+        #expect(seen == Set((0..<segments.words).map { Int32(segments.bars + $0) }))
+    }
+
     @Test func roundTripsThroughDecode() {
         for entry in corpus.prefix(3) {
             #expect(tokenizer.decode(tokenizer.encode(entry.text)) == entry.text)

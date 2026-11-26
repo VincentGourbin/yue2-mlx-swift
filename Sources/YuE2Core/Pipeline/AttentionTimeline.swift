@@ -36,11 +36,14 @@ public enum AttentionTimeline {
         public var wordAttention: [Double?] = []
     }
 
-    /// Prompt token → segment: score bar `b` is segment `b`, lyric word `w` is `bars + w`.
+    /// Prompt token → segment: score bar `b` is segment `b`, lyric segment `w` is `bars + w`.
+    /// A lyric segment is a word, or several words spelled by one token (two Han characters merged
+    /// by the tokenizer): `wordSegment[k]` is the segment of word `k` as `LyricTimeline` counts them.
     struct Segments {
         var ids: [Int32]
         var bars: Int
         var words: Int
+        var wordSegment: [Int] = []
     }
 
     // MARK: - Public entry points
@@ -212,6 +215,15 @@ public enum AttentionTimeline {
             wordStarts = Array(segmentStarts(path, count: segments.words).dropFirst()) + [nil]
             wordAttention = dwellAttention(word, path: path, count: segments.words).dropFirst().map { $0 } + [nil]
         }
+        if !wordStarts.isEmpty, segments.wordSegment.count != segments.words {
+            // Back to one entry per word: the first word of a shared segment takes its start, the
+            // others are placed by the score alone; all share its attention.
+            let perSegmentStart = wordStarts, perSegmentAttention = wordAttention
+            wordStarts = segments.wordSegment.enumerated().map { k, s in
+                k > 0 && segments.wordSegment[k - 1] == s ? nil : perSegmentStart[s]
+            }
+            wordAttention = segments.wordSegment.map { perSegmentAttention[$0] }
+        }
         return Reading(barStarts: barStarts, wordStarts: wordStarts, wordAttention: wordAttention)
     }
 
@@ -285,17 +297,9 @@ public enum AttentionTimeline {
             let line = Array(textBytes[lineStart..<i])
             let text = String(decoding: line, as: UTF8.self).trimmingCharacters(in: .whitespaces)
             if text.isEmpty || (text.hasPrefix("[") && text.hasSuffix("]")) { continue }
-            // Whitespace-separated tokens with their byte ranges; kept as LyricTimeline keeps them.
-            var tokens: [(String, Range<Int>)] = []
-            var start: Int?
-            for j in 0...line.count {
-                let space = j == line.count || [0x20, 0x09, 0x0D].contains(line[j])
-                if space, let s = start {
-                    tokens.append((String(decoding: line[s..<j], as: UTF8.self), (lineStart + s)..<(lineStart + j)))
-                    start = nil
-                } else if !space, start == nil {
-                    start = j
-                }
+            // Words with their byte ranges, cut exactly as LyricTimeline cuts them.
+            let tokens = LyricTimeline.wordPieces(String(decoding: line, as: UTF8.self)).map {
+                ($0.text, (lineStart + $0.bytes.lowerBound)..<(lineStart + $0.bytes.upperBound))
             }
             for (k, (token, range)) in tokens.enumerated() {
                 let next = k + 1 < tokens.count ? tokens[k + 1].0 : nil
@@ -306,15 +310,23 @@ public enum AttentionTimeline {
                 words += 1
             }
         }
+        // Token → its first word; a word no token starts in (its bytes inside the previous word's
+        // token) joins the previous word's segment.
         offset = 0
+        var tokenWord = [Int](repeating: -1, count: textIDs.count)
+        var owned = [Bool](repeating: false, count: words)
         for (k, id) in textIDs.enumerated() {
             let n = tokenizer.byteCount(of: id)
             if let w = (offset..<min(offset + n, textBytes.count)).lazy.map({ wordOfByte[$0] }).first(where: { $0 >= 0 }) {
-                ids[1 + k] = Int32(bars + w)
+                tokenWord[k] = w
+                owned[w] = true
             }
             offset += n
         }
-        return Segments(ids: ids, bars: bars, words: words)
+        var wordSegment: [Int] = []
+        for w in 0..<words { wordSegment.append(w == 0 ? 0 : wordSegment[w - 1] + (owned[w] ? 1 : 0)) }
+        for (k, w) in tokenWord.enumerated() where w >= 0 { ids[1 + k] = Int32(bars + wordSegment[w]) }
+        return Segments(ids: ids, bars: bars, words: (wordSegment.last ?? -1) + 1, wordSegment: wordSegment)
     }
 
     // MARK: - Monotonic path

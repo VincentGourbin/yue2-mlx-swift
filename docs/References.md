@@ -6,21 +6,21 @@ Source: `Sources/YuE2Core/Configuration/ReferenceProfiles.swift`. Measurements: 
 
 ## The table
 
-70.0 s of audio (1 750 semantic tokens), 32 ODE steps, MacBook Pro M3 Max 96 GB, idle GPU, one pass after a 120 s cool-down.
+70.0 s of audio (1 750 semantic tokens), MacBook Pro M3 Max 96 GB, idle GPU, 120 s cool-down before each point, 26 November 2026 (engine 1.12.1 + fixes). Full: AB2 at 32 steps (33 network calls), two passes (A/B/A, within ±2.2 %); draft: `--draft`, AB2 at 8 steps (9 calls), one pass. Same seed, same tokens; the draft changes only the NAR, so the same peak.
 
-| Id | Pack | Compute | Time | Peak process | Who it is for |
-|---|---|---|---|---|---|
-| `4bit-fast` | `int4-mixed-head` (2.5 GB) | everything resident, NAR dequantized to bf16, VAE fp16 tile 640, Mac caches | **65.7 s** | 8.9 GB | Mac: the only profile faster than real time at 32 steps |
-| `4bit-lean` | `int4-mixed-head` | stage-scoped residency, packed NAR, fp16, VAE fp16 tile 256, mobile limits | 77.7 s | **3.4 GB** | iPhone 15 Pro Max and any 8 GB Mac |
-| `4bit-tiny` | `int4-mixed-head` | `4bit-lean` plus a 64-frame VAE tile and a fixed 256 MB cache / 3 GB threshold | 94.8 s | **2.6 GB** | the most constrained devices; same audio as `4bit-lean` |
-| `8bit-fast` | `qint8-all-head` (3.5 GB) | everything resident, NAR dequantized to bf16, VAE fp16/640 | 76.5 s | 9.9 GB | Mac, when the AR path must stay 8-bit |
-| `8bit-lean` | `qint8-all-head` | residency, packed NAR, fp16, VAE fp16/256, mobile limits | 79.3 s | 4.4 GB | iPhone 8 GB with headroom, 8-16 GB Macs |
-| `16bit-fast` | bf16 (7.3 GB) | everything resident, VAE fp16/640 | 84.9 s | 12.0 GB | quality reference |
-| `16bit-lean` | bf16 | stage-scoped residency, VAE fp16/256, Mac caches | 84.9 s | 6.9 GB | 16-24 GB Macs |
+| Id | Pack | Compute | Full | Draft | Peak process | Who it is for |
+|---|---|---|---|---|---|---|
+| `4bit-fast` | `int4-mixed-head` (2.5 GB) | everything resident, NAR dequantized to bf16, VAE fp16 tile 640, Mac caches | **39.4 s (39.3)** | 21.1 s | 8.3 GB | Mac: the fastest; every profile is now faster than real time on an M3 Max |
+| `4bit-lean` | `int4-mixed-head` | stage-scoped residency, packed NAR, fp16, VAE fp16 tile 256, mobile limits | 44.5 s (43.0) | 22.8 s | **3.4 GB** | 8 GB Macs, the smallest download for an 8 GB iPhone |
+| `4bit-tiny` | `int4-mixed-head` | `4bit-lean` plus a 64-frame VAE tile and a fixed 256 MB cache / 3 GB threshold | 45.5 s (44.6) | 23.1 s | **2.5 GB** | the most constrained devices; same audio as `4bit-lean` |
+| `8bit-fast` | `qint8-all-head` (3.5 GB) | everything resident, NAR dequantized to bf16, VAE fp16/640 | 48.3 s (47.7) | 28.6 s | 9.3 GB | Mac, when the AR path must stay 8-bit |
+| `8bit-lean` | `qint8-all-head` | residency, packed NAR, fp16, VAE fp16/256, mobile limits | 52.2 s (51.6) | 29.1 s | 4.3 GB | iPhone 15 Pro Max (3.3-3.4 GB there, [iOS.md](iOS.md)), 8-16 GB Macs |
+| `16bit-fast` | bf16 (7.3 GB) | everything resident, VAE fp16/640 | 60.1 s (59.3) | 39.3 s | 11.1 GB | quality reference |
+| `16bit-lean` | bf16 | stage-scoped residency, VAE fp16/256, Mac caches | 57.8 s (59.1) | 39.7 s | 6.8 GB | 16-24 GB Macs |
 
-`4bit-tiny` is the answer to "even less memory": the 8-bit NAR (1.43 GB) dominates every quantized pack, so lower AR bits buy little (3-bit: −0.2 GB, at the limit by ear; 2-bit: −0.4 GB, no longer music) while a smaller VAE tile and a smaller cache buy 0.8 GB at no quality cost, for +29 % time.
+`4bit-tiny` is the answer to "even less memory": the 8-bit NAR (1.43 GB) dominates every quantized pack, so lower AR bits buy little (3-bit: −0.2 GB, at the limit by ear; 2-bit: −0.4 GB, no longer music) while a smaller VAE tile and a smaller cache buy 0.8-0.9 GB at no quality cost, for +2 % time under AB2 (+22 % at the September midpoint measurement).
 
-Quick read: 4-bit is fastest because the autoregressive phases (score, then semantic tokens) are bound by memory bandwidth and dispatch; the NAR, 8-bit in both quantized packs, costs ≈ 50 s whatever the profile and is three quarters of the time. The lean profiles divide memory by two to three for no time cost (8-bit) to 18 % (4-bit, due to the packed NAR rather than to residency).
+Quick read: since AB2 the NAR costs 25-30 s whatever the profile (≈ 50-60 s at midpoint in September), and 7 s as a draft; what separates the profiles is now the autoregressive phases (score, then semantic tokens: 13 s in 4-bit, 21 s in 8-bit, 32 s in bf16), bound by memory bandwidth and dispatch. A draft is therefore mostly AR time (60-80 % of it). The lean profiles divide memory by two to three for 0-13 % more time (the packed NAR, not the residency). The September midpoint table (32 steps, 64 calls: 65.7-94.8 s) is kept in [Benchmarks.md](Benchmarks.md).
 
 ## What each setting does
 
@@ -39,10 +39,11 @@ Quick read: 4-bit is fastest because the autoregressive phases (score, then sema
 ## Choosing
 
 - **Mac, 32 GB and up**: `4bit-fast`. If you want the AR path in 8 bits: `8bit-fast`. For a quality reference: `16bit-fast`.
-- **Mac, 16-24 GB**: `16bit-lean` (6.9 GB), or `8bit-lean` / `4bit-lean` when other apps are running.
-- **8 GB Mac, iPhone**: `4bit-lean` (3.4 GB). `8bit-lean` also fits (4.4 GB) on an iPhone 15 Pro Max with the increased-memory entitlement.
-- **Less than that** (6 GB phones, iPads without the entitlement, a busy 8 GB Mac): `4bit-tiny` (2.6 GB, +29 % time, same audio).
-- **Even faster, memory no object**: outside the six, `--quant int4 --quant-head` (4-bit AR path, bf16 NAR, `int4-head` pack, 4.4 GB) gives 66-69 s; it is the candidate for a seventh profile.
+- **Mac, 16-24 GB**: `16bit-lean` (6.8 GB), or `8bit-lean` / `4bit-lean` when other apps are running.
+- **iPhone 15 Pro Max**: `8bit-lean` (3.3-3.4 GB there with the increased-memory entitlement; the app's profile). `4bit-lean` when the download size matters (2.5 GB pack instead of 3.5).
+- **8 GB Mac**: `4bit-lean` (3.4 GB), or `8bit-lean` (4.3 GB).
+- **Less than that** (6 GB phones, iPads without the entitlement, a busy 8 GB Mac): `4bit-tiny` (2.5 GB, +2 % time, same audio).
+- **Even faster, memory no object**: outside the seven, `--quant int4 --quant-head` (4-bit AR path, bf16 NAR, `int4-head` pack, 4.4 GB) gave 66-69 s at midpoint in September, level with `4bit-fast` then; not re-measured under AB2.
 
 ## Adding or changing a profile
 

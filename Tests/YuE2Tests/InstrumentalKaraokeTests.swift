@@ -179,6 +179,60 @@ struct InstrumentalKaraokeTests {
         #expect(throws: YuE2Error.self) { try Instrumental.transfer(abc: changing) }
     }
 
+    @Test func spaceFreeCJKLyricsGetOneWordPerCharacter() throws {
+        // Issue #7: a line without spaces was one word, so one timing for the whole line.
+        func words(_ line: String) -> [String] { LyricTimeline.parseLyrics(line, language: .english).flatMap(\.words).map(\.text) }
+        #expect(words("今天天氣很好我們一起去公園").count == 13)
+        #expect(words("今天天氣很好　我們，一起去公園。") == words("今天天氣很好我們一起去公園"))
+        #expect(words("きょうはいい天気") == ["きょ", "う", "は", "い", "い", "天", "気"])
+        #expect(words("コーヒー") == ["コー", "ヒー"])
+        #expect(words("愛してるbaby") == ["愛", "し", "て", "る", "baby"])
+        let korean = LyricTimeline.parseLyrics("사랑해 너를", language: .english).flatMap(\.words)
+        #expect(korean.map(\.syllables) == [["사", "랑", "해"], ["너", "를"]])
+        #expect(words("the morning light") == ["the", "morning", "light"])
+        let pieces = LyricTimeline.wordPieces("a 天気")
+        #expect(pieces.map(\.bytes) == [0..<1, 2..<5, 5..<8])
+        // Every character gets its own timed syllable on the score.
+        let abc = """
+            X:1
+            M:4/4
+            L:1/8
+            Q:1/4=120
+            K:C
+            V: Vocal
+            c2d2e2f2|g2a2b2c'2|
+            V: Ins
+            Z2|
+            """
+        let t = try LyricTimeline.build(abc: abc, lyrics: "我們一起去公園啊", language: .english)
+        let starts = t.lines[0].words.map(\.start)
+        #expect(starts.count == 8 && starts == starts.sorted() && Set(starts).count == 8)
+    }
+
+    @Test func inlineFieldsInsideABarAreRead() throws {
+        // App cover s20261115153051: the planner wrote fields inside a bar, one of them unreadable.
+        let abc = """
+            X:1
+            M:4/4
+            L:1/8
+            Q:1/4=120
+            K:C
+            V: Vocal
+            F2[K:D]F2c2=c2|F8|z4[K:A,B]F4|
+            V: Ins
+            Z3|
+            """
+        let s = try ABCScore(abc)
+        #expect(s.hasInlineFields && s.vocal.count == 3)
+        // F natural before the change, F# after it (D major), C# then an explicit natural.
+        #expect(s.vocal[0].notes.map(\.midi) == [65, 66, 73, 72])
+        // The key holds into the next bar; the unreadable `[K:A,B]` keeps D major.
+        #expect(s.vocal[1].notes.map(\.midi) == [66] && s.vocal[2].notes.map(\.midi) == [66])
+        #expect(s.vocal[2].tokens.contains("[K:A,B]") && s.vocal[2].length == 8)
+        #expect(throws: YuE2Error.self) { try ABCScore(abc.replacingOccurrences(of: "[K:D]", with: "[L:1/16]")) }
+        _ = try LyricTimeline.build(abc: abc, lyrics: "la le li lo la la")
+    }
+
     @Test func monotonicPathFollowsTheAttention() {
         // Three segments, attention moving 0 → 1 → 2 with noise; the song ends before segment 3.
         let probs: [[Float]] = [[0.9, 0.1, 0, 0], [0.6, 0.4, 0, 0], [0.2, 0.7, 0.1, 0], [0.3, 0.6, 0.1, 0],

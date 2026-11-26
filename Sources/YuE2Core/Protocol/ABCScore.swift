@@ -113,7 +113,7 @@ public struct ABCScore: Equatable, Sendable {
                     case "M":
                         let parts = value.split(separator: "/").compactMap { Int($0) }
                         if parts.count == 2 { liveMeter = (parts[0], parts[1]) }
-                    case "K": liveKey = value
+                    case "K": if (try? Self.keyAccidentals(value)) != nil { liveKey = value }
                     default: break
                     }
                     continue
@@ -133,12 +133,27 @@ public struct ABCScore: Equatable, Sendable {
             guard let voice = current else { throw YuE2Error.invalidRequest("ABC: music before any voice") }
             let barMeter = liveMeter ?? meter
             let bu = barMeter.0 * unit / barMeter.1
-            let accidentals = try Self.keyAccidentals(liveKey ?? key)
+            var accidentals = try Self.keyAccidentals(liveKey ?? key)
             var body = Substring(line)
             if body.hasSuffix("|") { body = body.dropLast() }
             for chunk in body.split(separator: "|", omittingEmptySubsequences: false) {
-                var bar = try Self.parseBar(String(chunk), keyAccidentals: accidentals, barUnits: bu)
+                // Inline fields inside a bar (`z2[K:Ab]z6`): a key applies from there on, a
+                // meter from the next bar; an unreadable value (the planner wrote `[K:A,B]`) is
+                // kept as a token and ignored.
+                var fields: [(Character, String)] = []
+                var bar = try Self.parseBar(String(chunk), keyAccidentals: &accidentals, barUnits: bu, fields: &fields)
                 bar.meter = barMeter
+                for (field, value) in fields {
+                    hasInlineFields = true
+                    switch field {
+                    case "K": if (try? Self.keyAccidentals(value)) != nil { liveKey = value }
+                    case "M":
+                        let parts = value.split(separator: "/").compactMap { Int($0) }
+                        if parts.count == 2 { liveMeter = (parts[0], parts[1]) }
+                    case "L": throw YuE2Error.invalidRequest("ABC: inline unit changes ([L:\(value)]) are not supported")
+                    default: break
+                    }
+                }
                 if bar.notes.isEmpty, bar.chords.isEmpty, bar.length > bu, bar.tokens.first?.hasPrefix("Z") == true {
                     for _ in 0..<(bar.length / bu) { voices[voice]!.append(Bar(tokens: ["Z"], length: bu, notes: [], chords: [], meter: barMeter)) }
                 } else {
@@ -198,6 +213,15 @@ public struct ABCScore: Equatable, Sendable {
     private static let steps: [Character: Int] = ["C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11]
 
     static func parseBar(_ text: String, keyAccidentals: [Character: Int], barUnits: Int) throws -> Bar {
+        var accidentals = keyAccidentals
+        var fields: [(Character, String)] = []
+        return try parseBar(text, keyAccidentals: &accidentals, barUnits: barUnits, fields: &fields)
+    }
+
+    /// `keyAccidentals` follows inline `[K:…]` fields; every inline field is reported in `fields`.
+    static func parseBar(
+        _ text: String, keyAccidentals: inout [Character: Int], barUnits: Int, fields: inout [(Character, String)]
+    ) throws -> Bar {
         var bar = Bar(tokens: [], length: 0, notes: [], chords: [])
         var barAccidentals: [String: Int] = [:]
         let chars = Array(text)
@@ -221,6 +245,18 @@ public struct ABCScore: Equatable, Sendable {
                     throw YuE2Error.invalidRequest("ABC: unterminated chord in \(text)")
                 }
                 bar.chords.append((t, String(chars[(i + 1)..<close])))
+                i = close + 1
+                bar.tokens.append(String(chars[start..<i]))
+                continue
+            }
+            if c == "[", i + 2 < chars.count, chars[i + 1].isLetter, chars[i + 2] == ":",
+               let close = chars[(i + 3)...].firstIndex(of: "]") {
+                let value = String(chars[(i + 3)..<close]).trimmingCharacters(in: .whitespaces)
+                fields.append((chars[i + 1], value))
+                if chars[i + 1] == "K", let key = try? Self.keyAccidentals(value) {
+                    keyAccidentals = key
+                    barAccidentals = [:]
+                }
                 i = close + 1
                 bar.tokens.append(String(chars[start..<i]))
                 continue

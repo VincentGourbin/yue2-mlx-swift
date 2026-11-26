@@ -6,7 +6,7 @@ Swift / MLX port of **YuE2** (m-a-p, September 2026) for Apple Silicon: lyrics a
 
 ## PocketAnthem, on the App Store
 
-[**PocketAnthem**](https://apps.apple.com/us/app/pocketanthem/id6815755463) is the iPhone app built on this engine: write lyrics, pick a style, and the song is generated **entirely on the phone** — no server, no upload, the 3-billion-parameter YuE2 model running through MLX on the A17 Pro with the `4bit-lean` configuration described below. Everything measured in this repository (stage-scoped residency, per-step checkpoints, the GPU gate, the published 4-bit pack) exists because that app had to fit in 8 GB and survive a trip to Safari mid-song. More on [vinceforge.com](https://vinceforge.com).
+[**PocketAnthem**](https://apps.apple.com/us/app/pocketanthem/id6815755463) is the iPhone app built on this engine: write lyrics, pick a style, and the song is generated **entirely on the phone** — no server, no upload, the 3-billion-parameter YuE2 model running through MLX on the A17 Pro with the `8bit-lean` configuration described below (`4bit-lean` until November 2026). Everything measured in this repository (stage-scoped residency, per-step checkpoints, the GPU gate, the published 4-bit pack) exists because that app had to fit in 8 GB and survive a trip to Safari mid-song. More on [vinceforge.com](https://vinceforge.com).
 
 Listed in [awesome-YuE](https://github.com/RevolutionLA/awesome-YuE), the curated YuE / YuE2 ecosystem list.
 
@@ -60,7 +60,7 @@ $BIN decode     --latents outputs/song/latent.npy --out outputs/song/audio.wav -
 From Swift:
 
 ```swift
-let profile = YuE2ReferenceProfile.named("4bit-lean")!; profile.applyGlobalPolicy()
+let profile = YuE2ReferenceProfile.named("8bit-lean")!; profile.applyGlobalPolicy()
 let session = try await ModelSession.load(modelsDir: dir, quant: profile.quant, quantizeHead: profile.quantizeHead,
                                           precision: profile.precision, residency: [.ar])
 let vae = try await loadVAEBackend(.mlx, directory: dir.appendingPathComponent("YuE2-Vae"), precision: .fp16)
@@ -69,19 +69,19 @@ let song = try await YuE2Pipeline(session: session, vae: vae, config: session.co
 
 ## The reference configurations
 
-70 s of audio, 32 ODE steps, MacBook Pro M3 Max, idle GPU, 120 s cool-down ([details](docs/References.md)).
+70 s of audio, MacBook Pro M3 Max, idle GPU, 120 s cool-down, November 2026; full = AB2 at 32 steps, draft = `--draft` (8 steps) ([details](docs/References.md)).
 
-| Id | Pack | Time | Peak memory | For |
-|---|---|---|---|---|
-| `4bit-fast` | int4-mixed-head, everything resident, NAR in bf16 | **65.7 s** | 8.9 GB | Mac: faster than real time |
-| `4bit-lean` | int4-mixed-head, stage-scoped residency, fp16, 256-frame tile | 77.7 s | **3.4 GB** | iPhone 15 Pro Max, 8 GB Macs |
-| `4bit-tiny` | as `4bit-lean`, 64-frame tile, 256 MB cache | 94.8 s | **2.6 GB** | the most constrained devices, same audio |
-| `8bit-fast` | qint8-all-head, everything resident, NAR in bf16 | 76.5 s | 9.9 GB | Mac, 8-bit AR path |
-| `8bit-lean` | qint8-all-head, residency, fp16, 256-frame tile | 79.3 s | 4.4 GB | iPhone with headroom, 8-16 GB Macs |
-| `16bit-fast` | bf16, everything resident | 84.9 s | 12.0 GB | quality reference |
-| `16bit-lean` | bf16, stage-scoped residency, 256-frame tile | 84.9 s | 6.9 GB | 16-24 GB Macs |
+| Id | Pack | Full | Draft | Peak memory | For |
+|---|---|---|---|---|---|
+| `4bit-fast` | int4-mixed-head, everything resident, NAR in bf16 | **39.4 s** | 21.1 s | 8.3 GB | Mac: fastest |
+| `4bit-lean` | int4-mixed-head, stage-scoped residency, fp16, 256-frame tile | 44.5 s | 22.8 s | **3.4 GB** | 8 GB Macs, smallest iPhone download |
+| `4bit-tiny` | as `4bit-lean`, 64-frame tile, 256 MB cache | 45.5 s | 23.1 s | **2.5 GB** | the most constrained devices, same audio |
+| `8bit-fast` | qint8-all-head, everything resident, NAR in bf16 | 48.3 s | 28.6 s | 9.3 GB | Mac, 8-bit AR path |
+| `8bit-lean` | qint8-all-head, residency, fp16, 256-frame tile | 52.2 s | 29.1 s | 4.3 GB | iPhone 15 Pro Max (3.4 GB there), 8-16 GB Macs |
+| `16bit-fast` | bf16, everything resident | 60.1 s | 39.3 s | 11.1 GB | quality reference |
+| `16bit-lean` | bf16, stage-scoped residency, 256-frame tile | 57.8 s | 39.7 s | 6.8 GB | 16-24 GB Macs |
 
-On the iPhone 15 Pro Max (`4bit-lean`): a 30 s song in 273 s, 60 s in ≈ 12.7 min under thermal throttling, first listening validated ([measurements](docs/iOS.md)).
+On the iPhone 15 Pro Max (`8bit-lean`, AB2, measured in the app): a 131 s song in 394 s as a draft and 815 s in full quality, 3.4 GB peak ([measurements](docs/iOS.md)).
 
 ## What the port does
 

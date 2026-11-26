@@ -52,13 +52,13 @@ struct GenerateCommand: AsyncParsableCommand {
     @Flag(name: .long, help: "Profile the run: phase report, TTS metrics, and trace.json in --out.")
     var profile: Bool = false
 
-    @Option(name: .long, help: "VAE weight/compute precision (E1): fp32 (default) or fp16.")
-    var vaePrecision: DecodeCommand.Precision = .fp32
+    @Option(name: .long, help: "VAE weight/compute precision (E1): fp32 (default) or fp16. Wins over --reference.")
+    var vaePrecision: DecodeCommand.Precision?
 
-    @Option(name: .long, help: "VAE tile size in latent frames (default: 1024, or 256 under the mobile memory profile).")
+    @Option(name: .long, help: "VAE tile size in latent frames (default: 1024, or 256 under the mobile memory profile). Wins over --reference.")
     var vaeCoreFrames: Int?
 
-    @Flag(name: .long, help: "Stage-scoped weight residency: drop the AR branch once the NAR prefix cache is ready, the whole LM before the VAE (default under the mobile memory profile).")
+    @Flag(name: .long, help: "Stage-scoped weight residency: drop the AR branch once the NAR prefix cache is ready, the whole LM before the VAE (default under the mobile memory profile). Wins over --reference.")
     var releaseWeightsBetweenStages: Bool = false
 
     @Option(name: .long, help: "VAE decode backend (T-6.3): mlx (default), coreai-gpu, coreai-ane — Core AI falls back to MLX, loudly, on any failure.")
@@ -79,37 +79,25 @@ struct GenerateCommand: AsyncParsableCommand {
     @Option(name: .long, help: "With --instrumental: extra renders (next seeds) when SheetSage2 hears a voice; 0 skips the check.")
     var instrumentalRetries: Int = 2
 
-    @Option(name: .long, help: "One of the six reference configurations (4bit-fast, 4bit-lean, 8bit-fast, 8bit-lean, 16bit-fast, 16bit-lean); sets quant, precision, NAR compute, VAE, residency and memory profile — `yue2 references` lists them.")
+    @Option(name: .long, help: "One of the seven reference configurations (4bit-fast, 4bit-lean, 4bit-tiny, 8bit-fast, 8bit-lean, 16bit-fast, 16bit-lean); sets quant, precision, NAR compute and schedule, VAE, residency and memory profile — `yue2 references` lists them. A flag written explicitly (--quant, --quant-head, --precision, --vae-precision, --vae-core-frames, --release-weights-between-stages, --ode-steps, --ode-method, --nar-compute, --compiled-decode) wins and is reported.")
     var reference: String?
 
     func run() async throws {
         let modelsDir = try resolveModelsDir(modelOptions.modelsDir)
         let request = try requestOptions.makeRequest()
-        var quant = modelOptions.quant
-        var quantHead = modelOptions.quantHead
-        var precision = modelOptions.precision
-        var vaePrecisionChoice = vaePrecision.vaePrecision
-        var vaeTile = vaeCoreFrames
-        var releaseFlag = releaseWeightsBetweenStages
         if draft, odeSteps != nil || odeMethod != nil {
             throw YuE2Error.invalidRequest("--draft fixes the NAR schedule; drop --ode-steps / --ode-method")
         }
         var steps = draft ? YuE2ReferenceProfile.draftODESteps : odeSteps
         var method = draft ? ODEMethod.ab2 : odeMethod
-        if let reference {
-            guard let profile = YuE2ReferenceProfile.named(reference) else {
-                throw YuE2Error.invalidRequest("unknown reference profile \(reference); see `yue2 references`")
-            }
-            profile.applyGlobalPolicy()
-            quant = profile.quant
-            quantHead = profile.quantizeHead
-            precision = profile.precision
-            vaePrecisionChoice = profile.vaePrecision
-            vaeTile = profile.vaeCoreFrames
-            releaseFlag = profile.releaseWeightsBetweenStages
+        let setup = try ModelSetup.resolve(
+            reference: reference, model: modelOptions, vaePrecision: vaePrecision, defaultVAEPrecision: .fp32,
+            vaeCoreFrames: vaeCoreFrames, releaseWeights: releaseWeightsBetweenStages)
+        let (quant, quantHead, precision) = (setup.quant, setup.quantHead, setup.precision)
+        let (vaePrecisionChoice, vaeTile, releaseFlag) = (setup.vaePrecision, setup.vaeCoreFrames, setup.releaseWeights)
+        if let profile = setup.profile {
             steps = steps ?? profile.odeSteps
             method = method ?? profile.odeMethod
-            FileHandle.standardError.write(Data("reference \(profile.id): \(profile.summary)\n".utf8))
         }
 
         let profilingSession: ProfilingSession? = profile ? ProfilingSession(config: .singleRun) : nil

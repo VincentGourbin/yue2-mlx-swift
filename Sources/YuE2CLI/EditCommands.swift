@@ -64,22 +64,13 @@ struct MelodyCommand: AsyncParsableCommand {
 }
 
 /// Shared loading for the two edit commands.
-private func loadEditPipeline(_ modelOptions: ModelOptions, reference: String?, vae: DecodeCommand.VAEVariant, vaePrecision: DecodeCommand.Precision, draft: Bool = false) async throws -> (YuE2Pipeline, URL) {
+private func loadEditPipeline(_ modelOptions: ModelOptions, reference: String?, vae: DecodeCommand.VAEVariant, vaePrecision: DecodeCommand.Precision?, draft: Bool = false) async throws -> (YuE2Pipeline, URL) {
     let modelsDir = try resolveModelsDir(modelOptions.modelsDir)
-    var quant = modelOptions.quant, quantHead = modelOptions.quantHead, precision = modelOptions.precision
-    var vaePrec = vaePrecision.vaePrecision
-    var tile: Int? = nil
-    var release = false
-    var profile: YuE2ReferenceProfile?
-    if let reference {
-        guard let named = YuE2ReferenceProfile.named(reference) else {
-            throw YuE2Error.invalidRequest("unknown reference profile \(reference)")
-        }
-        profile = named
-        named.applyGlobalPolicy()
-        quant = named.quant; quantHead = named.quantizeHead; precision = named.precision
-        vaePrec = named.vaePrecision; tile = named.vaeCoreFrames; release = named.releaseWeightsBetweenStages
-    }
+    let setup = try ModelSetup.resolve(
+        reference: reference, model: modelOptions, vaePrecision: vaePrecision, defaultVAEPrecision: .fp16,
+        vaeCoreFrames: nil, releaseWeights: false)
+    let (quant, quantHead, precision, vaePrec) = (setup.quant, setup.quantHead, setup.precision, setup.vaePrecision)
+    let (tile, release, profile) = (setup.vaeCoreFrames, setup.releaseWeights, setup.profile)
     let session = try await ModelSession.load(
         modelsDir: modelsDir, quant: quant, quantizeHead: quantHead, precision: precision, residency: release ? [.ar] : .all)
     let vaeModel = try YuE2VAE.load(directory: modelsDir.appendingPathComponent(vae.model.directoryName), precision: vaePrec)
@@ -111,7 +102,7 @@ struct VaryCommand: AsyncParsableCommand {
     @Option(name: .long, help: "Noise seed for the variation.") var seed: UInt64 = 1
     @Option(name: .long, help: "Reference configuration (yue2 references).") var reference: String?
     @Option(name: .long) var vae: DecodeCommand.VAEVariant = .standard
-    @Option(name: .long) var vaePrecision: DecodeCommand.Precision = .fp16
+    @Option(name: .long, help: "VAE precision: fp16 (default) or fp32. Wins over --reference.") var vaePrecision: DecodeCommand.Precision?
     @Option(name: .long, help: "Output directory.") var out: String
     @Option(name: .long) var format: DecodeCommand.WAVFormat = .int16
 
@@ -142,7 +133,7 @@ struct RegenerateCommand: AsyncParsableCommand {
     @Flag(name: .long, help: "Draft NAR (8 steps; regenerate re-imposes the kept frames, so midpoint: 16 calls instead of 64) to audition a repair before the full render.") var draft = false
     @Option(name: .long, help: "Reference configuration (yue2 references).") var reference: String?
     @Option(name: .long) var vae: DecodeCommand.VAEVariant = .standard
-    @Option(name: .long) var vaePrecision: DecodeCommand.Precision = .fp16
+    @Option(name: .long, help: "VAE precision: fp16 (default) or fp32. Wins over --reference.") var vaePrecision: DecodeCommand.Precision?
     @Option(name: .long, help: "Output directory.") var out: String
     @Option(name: .long) var format: DecodeCommand.WAVFormat = .int16
 

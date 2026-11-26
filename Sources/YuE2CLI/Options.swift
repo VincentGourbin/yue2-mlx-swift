@@ -13,14 +13,64 @@ struct ModelOptions: ParsableArguments {
     @Option(name: .long, help: "Directory containing YuE2 checkpoints (defaults to $YUE2_MODELS_DIR).")
     var modelsDir: String?
 
-    @Option(name: .long, help: "AR quantization preset (O5, opt-in): none, qint8, int4.")
-    var quant: ModelSession.Quantization = .none
+    @Option(name: .customLong("quant"), help: "AR quantization preset (O5, opt-in): none (default), qint8, int4. Wins over --reference.")
+    var quantArgument: ModelSession.Quantization?
 
-    @Flag(name: .long, help: "Also quantize lm_head under --quant (RestrictedHead dequantizes rows on demand).")
+    @Flag(name: .long, help: "Also quantize lm_head under --quant (RestrictedHead dequantizes rows on demand). Wins over --reference.")
     var quantHead: Bool = false
 
-    @Option(name: .long, help: "Compute precision for unquantized weights/activations: bf16 (default) or fp16 (E2).")
-    var precision: YuE2ComputePrecision = .bf16
+    @Option(name: .customLong("precision"), help: "Compute precision for unquantized weights/activations: bf16 (default) or fp16 (E2). Wins over --reference.")
+    var precisionArgument: YuE2ComputePrecision?
+
+    var quant: ModelSession.Quantization { quantArgument ?? .none }
+    var precision: YuE2ComputePrecision { precisionArgument ?? .bf16 }
+}
+
+/// What a command loads: a `--reference` profile's settings, then every flag the user wrote on top
+/// of it (issue #5: flags were silently discarded under `--reference`). Each override is printed
+/// with the profile's summary, so a run that is no longer the reference says so.
+struct ModelSetup {
+    var quant: ModelSession.Quantization
+    var quantHead: Bool
+    var precision: YuE2ComputePrecision
+    var vaePrecision: VAEPrecision
+    var vaeCoreFrames: Int?
+    var releaseWeights: Bool
+    var profile: YuE2ReferenceProfile?
+
+    /// `vaePrecision` / `vaeCoreFrames` nil and `releaseWeights` false mean "not written".
+    static func resolve(
+        reference: String?, model: ModelOptions, vaePrecision: DecodeCommand.Precision?, defaultVAEPrecision: VAEPrecision,
+        vaeCoreFrames: Int?, releaseWeights: Bool
+    ) throws -> ModelSetup {
+        var setup = ModelSetup(
+            quant: model.quant, quantHead: model.quantHead, precision: model.precision,
+            vaePrecision: vaePrecision?.vaePrecision ?? defaultVAEPrecision, vaeCoreFrames: vaeCoreFrames,
+            releaseWeights: releaseWeights, profile: nil)
+        guard let reference else { return setup }
+        guard let profile = YuE2ReferenceProfile.named(reference) else {
+            throw YuE2Error.invalidRequest("unknown reference profile \(reference); see `yue2 references`")
+        }
+        profile.applyGlobalPolicy()
+        setup.profile = profile
+        var overrides: [String] = []
+        setup.quant = model.quantArgument ?? profile.quant
+        if let q = model.quantArgument, q != profile.quant { overrides.append("--quant \(q.rawValue)") }
+        setup.quantHead = model.quantHead || profile.quantizeHead
+        if model.quantHead, !profile.quantizeHead { overrides.append("--quant-head") }
+        setup.precision = model.precisionArgument ?? profile.precision
+        if let p = model.precisionArgument, p != profile.precision { overrides.append("--precision \(p.rawValue)") }
+        setup.vaePrecision = vaePrecision?.vaePrecision ?? profile.vaePrecision
+        if let v = vaePrecision, v.vaePrecision != profile.vaePrecision { overrides.append("--vae-precision \(v.rawValue)") }
+        setup.vaeCoreFrames = vaeCoreFrames ?? profile.vaeCoreFrames
+        if let t = vaeCoreFrames, t != profile.vaeCoreFrames { overrides.append("--vae-core-frames \(t)") }
+        setup.releaseWeights = releaseWeights || profile.releaseWeightsBetweenStages
+        if releaseWeights, !profile.releaseWeightsBetweenStages { overrides.append("--release-weights-between-stages") }
+        var line = "reference \(profile.id): \(profile.summary)"
+        if !overrides.isEmpty { line += "\n  overridden by flags (not the reference any more): " + overrides.joined(separator: ", ") }
+        FileHandle.standardError.write(Data((line + "\n").utf8))
+        return setup
+    }
 }
 
 /// `ModelSession.Quantization` (a `YuE2Quantization` alias) lives in `YuE2Core`, which has no

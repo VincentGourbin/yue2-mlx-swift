@@ -581,7 +581,7 @@ public struct LyricTimeline: Codable, Equatable, Sendable {
                 section = String(line.dropFirst().dropLast())
                 continue
             }
-            let tokens = line.split(whereSeparator: \.isWhitespace).map(String.init)
+            let tokens = wordPieces(line).map(\.text)
             var words: [LyricWord] = []
             for (k, token) in tokens.enumerated() {
                 let next = k + 1 < tokens.count ? tokens[k + 1] : nil
@@ -592,6 +592,63 @@ public struct LyricTimeline: Codable, Equatable, Sendable {
             if !words.isEmpty { out.append(LyricLine(text: line, section: section, words: words)) }
         }
         return out
+    }
+
+    /// The words of a lyric line with their UTF-8 byte ranges in it: whitespace-separated, except
+    /// that Han characters and kana are one word each (Chinese and Japanese are written without
+    /// spaces; a sung syllable per character, issue #7), small kana and `ー` staying with the
+    /// character before them, and CJK punctuation separating. Hangul words keep their spaces.
+    static func wordPieces(_ line: String) -> [(text: String, bytes: Range<Int>)] {
+        var out: [(text: String, bytes: Range<Int>)] = []
+        var run = "", runStart = 0, offset = 0
+        var lastWasCJK = false
+        func flush() {
+            if !run.isEmpty { out.append((run, runStart..<(runStart + run.utf8.count))) }
+            run = ""
+        }
+        for c in line {
+            let n = c.utf8.count
+            defer { offset += n }
+            let v = c.unicodeScalars.first!.value
+            if c.isWhitespace || (!c.isLetter && (0x3000...0x303F ~= v || 0xFF00...0xFF65 ~= v) && v != 0x3005) {
+                flush()
+                lastWasCJK = false
+                continue
+            }
+            if Self.attachesToPrevious(v), lastWasCJK, let last = out.last, run.isEmpty {
+                out[out.count - 1] = (last.text + String(c), last.bytes.lowerBound..<(offset + n))
+                continue
+            }
+            if Self.isSyllabicCJK(v) {
+                flush()
+                out.append((String(c), offset..<(offset + n)))
+                lastWasCJK = true
+                continue
+            }
+            if run.isEmpty { runStart = offset }
+            run.append(c)
+            lastWasCJK = false
+        }
+        flush()
+        return out
+    }
+
+    /// Han (CJK ideographs, `々`) and kana: one sung syllable each.
+    static func isSyllabicCJK(_ v: UInt32) -> Bool {
+        0x4E00...0x9FFF ~= v || 0x3400...0x4DBF ~= v || 0x20000...0x2FFFF ~= v || 0xF900...0xFAFF ~= v || v == 0x3005
+            || 0x3040...0x309F ~= v || 0x30A0...0x30FF ~= v || 0x31F0...0x31FF ~= v || 0xFF66...0xFF9D ~= v
+    }
+
+    /// Small kana and the long-vowel mark: part of the syllable before them.
+    static func attachesToPrevious(_ v: UInt32) -> Bool {
+        Set<UInt32>([0x3041, 0x3043, 0x3045, 0x3047, 0x3049, 0x3063, 0x3083, 0x3085, 0x3087, 0x308E, 0x3095, 0x3096,
+                     0x30A1, 0x30A3, 0x30A5, 0x30A7, 0x30A9, 0x30C3, 0x30E3, 0x30E5, 0x30E7, 0x30EE, 0x30F5, 0x30F6,
+                     0x30FC, 0xFF70, 0xFF9E, 0xFF9F]).contains(v) || 0x31F0...0x31FF ~= v
+    }
+
+    /// Hangul syllable blocks in a word (each one sung syllable).
+    static func hangulSyllables(_ token: String) -> Int {
+        token.unicodeScalars.filter { 0xAC00...0xD7A3 ~= $0.value }.count
     }
 
     private static let vowels = Set("aeiouyàâäéèêëîïôöùûüÿœæ")
@@ -608,6 +665,8 @@ public struct LyricTimeline: Codable, Equatable, Sendable {
 
     /// Spoken-English syllables by rule: vowel groups, minus silent endings, plus common hiatus.
     static func syllablesEnglish(_ token: String) -> Int {
+        let hangul = hangulSyllables(token)
+        if hangul > 0 { return hangul }
         let w = Array(token.lowercased().filter { $0.isLetter })
         guard !w.isEmpty else { return 0 }
         var n = vowelGroups(w)
@@ -626,6 +685,8 @@ public struct LyricTimeline: Codable, Equatable, Sendable {
     /// Sung French syllables: vowel groups; a final mute e is sung before a consonant and elided
     /// before a vowel, an h, or at the end of a line.
     static func syllablesFrench(_ token: String, next: String?) -> Int {
+        let hangul = hangulSyllables(token)
+        if hangul > 0 { return hangul }
         var s = token.lowercased().replacingOccurrences(of: "’", with: "'")
         if let apostrophe = s.lastIndex(of: "'") { s = String(s[s.index(after: apostrophe)...]) }
         let w = Array(s.filter { $0.isLetter })
@@ -648,6 +709,7 @@ public struct LyricTimeline: Codable, Equatable, Sendable {
     static func split(_ word: String, into n: Int) -> [String] {
         guard n > 1 else { return [word] }
         let chars = Array(word)
+        if hangulSyllables(word) == n, chars.count == n { return chars.map(String.init) }
         var starts: [Int] = []
         var inGroup = false
         for (i, c) in chars.enumerated() {
