@@ -2,6 +2,14 @@
 
 Published versions are squashed commits on `main`, merged through a pull request (the working history stays local); each version has a tag and a GitHub release.
 
+## 1.12.2 — 2026-11-26
+
+- **CJK lyrics timed character by character** (#7, reported by Simon Law): a line written without spaces was one word, so `timeline.json` gave it one timing. Han characters and kana are now one word each (small kana and `ー` stay with the character before them, CJK punctuation separates), Hangul words count one syllable per block. Words spelled by one shared token (the tokenizer merges `今天`) share its attention segment and are placed by the score. On a 41 s Mandopop render, 13/8/8 timed characters per line; against Whisper, ≈ 0.3 s on the verses, 0.5-1 s on the chorus.
+- **CLI: a flag written explicitly wins over `--reference`, and says so** (#5, reported by Simon Law): `--quant`, `--quant-head`, `--precision`, `--vae-precision`, `--vae-core-frames` and `--release-weights-between-stages` were silently overwritten by the profile (unlike `--ode-steps` and `--nar-compute`). One rule for `generate`, `vary` and `regenerate`: the profile fills what was not written, and each departure is printed after its summary (`overridden by flags (not the reference any more): …`). `--reference` alone is unchanged. The help lists the seven profiles (`4bit-tiny` was missing).
+- **Inline fields inside a bar** (ASK Q19 c): `ABCScore` reads `z2[K:Ab]z6|` (key from there on, meter from the next bar; `[L:…]` refused as before); an unreadable key such as the planner's `[K:A,B]` is kept as a token and ignored. Two app covers failed `karaoke` and the timeline on it.
+- **Docs: `8bit-lean` is the iPhone profile** (ASK Q19 b), with the app's AB2 measurements (3.3-3.4 GB peak on an iPhone 15 Pro Max).
+- **The seven profiles re-measured under AB2 and as drafts** (ASK Q19 a; M3 Max, 70 s song): full 39.4-60.1 s instead of 65.7-94.8 s at midpoint, draft 21.1-39.7 s, peaks unchanged. References.md, Benchmarks.md and the README carry the new tables; `yue2 references` names `8bit-lean` as the iPhone profile. `Scripts/bench-references.sh` measures all seven, `QUALITY=draft` for drafts, and waits for Time Machine and busy processes before each point.
+
 ## 1.12.1 — 2026-11-25
 
 - **No NaN audio from the fp16 VAE on M5, a WAV export that survives it** (PR #6 by Simon Law, @ramishi; fixes #3, addresses #4): on an M5 (MLX's NAX kernels), fp16 decode tiles of 704-1280 frames emitted NaN, and the int16 export trapped and lost the whole render. The exporter now replaces non-finite samples with silence; the `fast` profiles decode with 640-frame tiles instead of 1024; both tiled decode entry points re-decode at half the core size (floor 64) when a crop is non-finite. Output is bit-identical at every tile size (checked on an M3 Max, which never showed the NaN); the clean path pays one finiteness check per tile.

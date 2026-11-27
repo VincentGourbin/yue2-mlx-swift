@@ -38,7 +38,7 @@ The request file: `style`, `lyrics` (`[Verse]`, `[Chorus]`, `[Bridge]`, `[Outro]
 
 | Option | Default | Effect |
 |---|---|---|
-| `--reference <id>` | — | applies one of the six configurations ([References.md](References.md)); the options below still work to depart from it |
+| `--reference <id>` | — | applies one of the seven configurations ([References.md](References.md)); every option below written explicitly wins over it, and the run lists those overrides on stderr (`overridden by flags (not the reference any more): …`). Before 1.12.2, `--quant`, `--quant-head`, `--precision`, `--vae-precision`, `--vae-core-frames` and `--release-weights-between-stages` were silently ignored under `--reference` (issue #5) |
 | `--quant` | `none` | `none`, `qint8`, `int4` (AR path only), `qint8-all`, `int4-all`, `int4-mixed` (both paths) |
 | `--quant-head` | off | quantized `lm_head`, computed by `quantizedMatmul` on the phase's rows |
 | `--precision` | `bf16` | `fp16` for the iPhone |

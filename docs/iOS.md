@@ -5,19 +5,36 @@ The engine runs on iOS 27 (Metal through MLX; Core AI optional for the VAE). The
 ## Xcode project
 
 - Deployment target iOS 27; dependency `YuE2Core` (and `MLXProfiler` for measurements); mlx-swift compiles its metallib for iOS inside the Xcode build, nothing to do.
-- Capability **Increased Memory Limit** (`com.apple.developer.kernel.increased-memory-limit`): without it the jetsam limit falls below the 3.4 GB of `4bit-lean`.
+- Capability **Increased Memory Limit** (`com.apple.developer.kernel.increased-memory-limit`): without it the jetsam limit falls below the 3.3-3.4 GB of `8bit-lean` (or `4bit-lean`).
 - `UIFileSharingEnabled` to drop the pack through Finder and retrieve WAVs.
 - Do not link `CoreAI` explicitly (absent from the simulator SDK; auto-linked where `import CoreAI` compiles).
 - The Simulator is useless for inference: MLX crashes on the first tensor (software Metal); a physical device is required.
 
 ## The iPhone profile
 
-`4bit-lean`: `int4-mixed-head` pack (2.5 GB, dropped into `Caches/models/YuE2-3B/mlx-prequantized/int4-mixed-head/`), fp16, stage-scoped residency, packed NAR, VAE fp16 tile 256, memory limits sized from `os_proc_available_memory` (cache ≈ 1 GB, threshold = available − 1.25 GB). `8bit-lean` (4.4 GB) also fits. bf16 does not.
+`8bit-lean`: `qint8-all-head` pack (3.5 GB, `yue2 download --model qint8-all-head`, dropped into `Caches/models/YuE2-3B/mlx-prequantized/qint8-all-head/`), fp16, stage-scoped residency, packed NAR, VAE fp16 tile 256, memory limits sized from `os_proc_available_memory` (cache ≈ 1 GB, threshold = available − 1.25 GB). On an iPhone 15 Pro Max its peak footprint is 3.3-3.4 GB (`phys_footprint`, table below; the 4.4 GB of [References.md](References.md) is the Mac, where the same limits leave a larger cache). The reference app ships only this profile since 2026-11-22.
+
+`4bit-lean` (`int4-mixed-head`, 2.5 GB pack, 3.4 GB on the Mac) also fits and was the iPhone profile until then: a smaller download, an AR path that loses lines more often (`int4` drops a verse after a rest on some songs). bf16 does not fit.
 
 ```swift
-let profile = YuE2ReferenceProfile.named("4bit-lean")!
+let profile = YuE2ReferenceProfile.named("8bit-lean")!
 profile.applyGlobalPolicy()
 ```
+
+### Measured in the app (iPhone 15 Pro Max, `8bit-lean`, AB2, engine 1.11.0, November 2026)
+
+Seconds of computation per stage; peak = `phys_footprint`. Imposed score except the last line; in parentheses, stages reused from the draft.
+
+| Length | Quality | plan | semantic | NAR | VAE | total | peak |
+|---|---|---|---|---|---|---|---|
+| 45 s | draft (9 calls) | 2 | 55 | 52 | 8 | 117 | 3 324 MB |
+| 45 s | full (33) | (2) | (55) | 190 | 7 | 254 | 3 354 MB |
+| 81 s | draft | 3 | 121 | 91 | 14 | 229 | 3 327 MB |
+| 131 s | draft | 2 | 202 | 170 | 20 | 394 | 3 355 MB |
+| 131 s | full | (2) | (202) | 591 | 20 | 815 | 3 363 MB |
+| 137 s (free plan) | draft | 69 | 197 | 177 | 30 | 473 | 3 370 MB |
+
+One NAR call costs ≈ 0.125 s per second of music up to 81 s, 0.14 at 131-137 s (thermal `fair` to `serious`), 0.23 at 251 s (3 709 MB peak). Over 71 songs of the app's library, the NAR went from 8.3 s per second of music (midpoint, 64 calls) to 4.5 (AB2, 33) and 1.2 (draft, 9).
 
 ## The four stages, resumable
 

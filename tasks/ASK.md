@@ -567,3 +567,40 @@ Banc sur le Mac (`8bit-lean`, mêmes poids que l'iPhone), dossier `.local-runs/b
    - Une seule tranche NAR : préfixe + trames ≤ 24 576 (environ 860 s avec ce préfixe). Une longueur trop grande est refusée avant l'étape AR.
    - Essai avec 4 mesures ajoutées et `--extend-seconds 15` : 6 419 trames (+5,5 s), parties gardées identiques. La ligne est chantée deux fois, parce que j'avais aussi écrit des notes dans les mesures ajoutées ; pour une fin instrumentale, n'écrire que `V: Ins`.
    - La jonction est continue par construction (même masque que regenerate), mais rien n'est encore écouté.
+
+## ASK — équipe framework, Q19 : profils et tableaux de temps à remettre à jour après AB2 et le brouillon — 2026-11-25
+- Constat : `docs/References.md` et `docs/Benchmarks.md` donnent des temps du 2026-09-26, en midpoint 32 pas (64 évaluations), avant AB2 (1.11.0) et le brouillon ; `docs/iOS.md` donne encore `4bit-lean` comme profil iPhone (« The iPhone profile »), alors que l'app ne livre plus que `qint8-all-head` / `8bit-lean` depuis le 2026-11-22.
+- Mesures de l'app, iPhone 15 Pro Max, `8bit-lean`, AB2, moteur 1.11.0 (secondes de calcul ; pic = `phys_footprint`) :
+
+| Durée | Qualité | plan | sémantique | NAR | VAE | total | pic |
+|---|---|---|---|---|---|---|---|
+| 45 s | brouillon (9 éval.) | 2 | 55 | 52 | 8 | 117 | 3 324 MB |
+| 45 s | complet (33) | (2) | (55) | 190 | 7 | 254 | 3 354 MB |
+| 81 s | brouillon | 3 | 121 | 91 | 14 | 229 | 3 327 MB |
+| 131 s | brouillon | 2 | 202 | 170 | 20 | 394 | 3 355 MB |
+| 131 s | complet | (2) | (202) | 591 | 20 | 815 | 3 363 MB |
+| 137 s (plan libre) | brouillon | 69 | 197 | 177 | 30 | 473 | 3 370 MB |
+
+  Partition imposée sauf la dernière ligne ; entre parenthèses, étapes reprises du brouillon. Une évaluation coûte environ 0,125 s par seconde de musique jusqu'à 81 s, 0,14 à 131-137 s (thermique `fair` à `serious`), 0,23 à 251 s (variante, pic 3 709 MB).
+- Question : (a) remesurer les sept profils en AB2 32 pas et en brouillon et remplacer les tableaux ; (b) faire de `8bit-lean` le profil iPhone d'`iOS.md`, avec le pic mesuré (3,3 à 3,4 Go, pas 4,4) ; (c) `ABCScore` ne lit pas `[K:A,B]` en ligne (vu en Q18, deux reprises de l'app sans minutage) : à corriger quand possible.
+
+### Réponse (2026-11-26, moteur 1.12.2)
+- **(a) Fait.** Les sept profils ont été remesurés sur le M3 Max : chanson de 70 s, AB2 32 pas et brouillon, passes complet / brouillon / complet, 120 s de refroidissement, contrôle à ±2,2 %. Les tableaux de `docs/References.md`, `docs/Benchmarks.md` et du README sont remplacés ; celui de septembre reste dans `Benchmarks.md`, marqué comme dépassé.
+
+| Profil | complet | brouillon | pic |
+|---|---|---|---|
+| `4bit-fast` | 39,4 s (65,7 en septembre) | 21,1 s | 8,3 Go |
+| `4bit-lean` | 44,5 s (77,7) | 22,8 s | 3,4 Go |
+| `4bit-tiny` | 45,5 s (94,8) | 23,1 s | 2,5 Go |
+| `8bit-fast` | 48,3 s (76,5) | 28,6 s | 9,3 Go |
+| `8bit-lean` | 52,2 s (79,3) | 29,1 s | 4,3 Go |
+| `16bit-fast` | 60,1 s (84,9) | 39,3 s | 11,1 Go |
+| `16bit-lean` | 57,8 s (84,9) | 39,7 s | 6,8 Go |
+
+  - Le NAR passe de 51-70 s à 25-30 s en complet, et à 7 s en brouillon, quel que soit le profil. Ce qui sépare les profils, ce sont maintenant les phases AR (partition et jetons : 13 s en 4 bits, 21 s en 8 bits, 32 s en bf16). Un brouillon, c'est 60 à 80 % de temps AR.
+  - `4bit-tiny` ne coûte plus que 2 % de plus que `4bit-lean` (22 % en septembre).
+- **(b) Fait.** `docs/iOS.md` donne `8bit-lean` comme profil iPhone, avec ton tableau de mesures et le pic de 3,3 à 3,4 Go. `4bit-lean` y reste comme le plus petit téléchargement. Le README, `docs/API.md`, `docs/References.md` et le résumé du profil dans le moteur (`yue2 references`) suivent.
+- **(c) Corrigé.** `ABCScore` lit maintenant les champs placés dans une mesure (`z16z2[K:Ab]z6|`) : la tonalité vaut à partir de là, la mesure à partir de la mesure suivante. Une tonalité illisible comme `[K:A,B]` est gardée telle quelle dans la partition et ignorée. Les deux reprises `s20261115103908` et `s20261115153051` se lisent ; `karaoke` et la timeline ne s'arrêtent plus dessus.
+- Également dans 1.12.2 : les issues de Simon Law.
+  - #7 : les paroles chinoises et japonaises sont minutées caractère par caractère, le coréen syllabe par syllabe. Utile si l'app affiche du karaoké CJK.
+  - #5 : sous `--reference`, une option écrite explicitement l'emporte sur le profil. Cela ne concerne que la CLI, pas l'app.

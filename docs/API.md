@@ -11,7 +11,7 @@ dependencies: [.package(url: "https://github.com/VincentGourbin/yue2-mlx-swift",
 ```swift
 import YuE2Core
 
-let profile = YuE2ReferenceProfile.named("4bit-lean")!
+let profile = YuE2ReferenceProfile.named("8bit-lean")!
 profile.applyGlobalPolicy()                       // memory profile, NAR compute, compiled decode
 
 let session = try await ModelSession.load(

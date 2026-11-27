@@ -117,13 +117,13 @@ public struct YuE2ReferenceProfile: Sendable, Identifiable, Equatable {
             bits: .four, kind: .lean, quant: .int4Mixed, quantizeHead: true, precision: .fp16,
             narCompute: .packed, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 256,
             releaseWeightsBetweenStages: true, memoryProfile: .mobile, odeSteps: nil, odeMethod: .ab2,
-            summary: "int4-mixed-head pack, stage-scoped residency, packed NAR, fp16, VAE tile 256, mobile limits — the iPhone profile"),
+            summary: "int4-mixed-head pack, stage-scoped residency, packed NAR, fp16, VAE tile 256, mobile limits — the smallest download for an 8 GB iPhone"),
         YuE2ReferenceProfile(
             bits: .four, kind: .tiny, quant: .int4Mixed, quantizeHead: true, precision: .fp16,
             narCompute: .packed, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 64,
             releaseWeightsBetweenStages: true, memoryProfile: .mobile, odeSteps: nil, odeMethod: .ab2,
             mobileLimitsMB: (cache: 256, limit: 3072),
-            summary: "int4-mixed-head pack, 4bit-lean plus a 64-frame VAE tile and a 256 MB cache: ≈ 2.6 GB peak for +29 % time, same audio — the most constrained devices"),
+            summary: "int4-mixed-head pack, 4bit-lean plus a 64-frame VAE tile and a 256 MB cache: ≈ 2.5 GB peak for ≈ +2 % time, same audio — the most constrained devices"),
         YuE2ReferenceProfile(
             bits: .eight, kind: .fast, quant: .qint8All, quantizeHead: true, precision: .bf16,
             narCompute: .dequantized, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 640,
@@ -133,7 +133,7 @@ public struct YuE2ReferenceProfile: Sendable, Identifiable, Equatable {
             bits: .eight, kind: .lean, quant: .qint8All, quantizeHead: true, precision: .fp16,
             narCompute: .packed, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 256,
             releaseWeightsBetweenStages: true, memoryProfile: .mobile, odeSteps: nil, odeMethod: .ab2,
-            summary: "qint8-all-head pack, stage-scoped residency, packed NAR, fp16, VAE tile 256, mobile limits"),
+            summary: "qint8-all-head pack, stage-scoped residency, packed NAR, fp16, VAE tile 256, mobile limits — the iPhone profile (3.3-3.4 GB on an iPhone 15 Pro Max)"),
         YuE2ReferenceProfile(
             bits: .sixteen, kind: .fast, quant: .none, quantizeHead: false, precision: .bf16,
             narCompute: .packed, compiledDecode: false, vaePrecision: .fp16, vaeCoreFrames: 640,
