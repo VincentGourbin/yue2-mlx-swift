@@ -86,6 +86,8 @@ The NAR (8-bit, 1.43 GB) dominates the packs, so lower AR bits buy 0.2-0.4 GB at
 
 Clean traces (21 September): plan phase at 54-62 % of one core and 68-78 % GPU, semantic phase at 96 % of one core and 72-79 % GPU, NAR at 2 % CPU and 79 % GPU. Semantic phase alone (8-bit, 600 tokens): 114 tok/s where memory bandwidth would allow ≈ 270. The preallocated KV cache (v1.0.0) brought CPU down to 2.2 s user + 0.9 s sys for 6 s of wall time; the compiled decode step brought nothing (103-113 tok/s against 114-115) and is enabled nowhere.
 
+**Deep pipeline (1.13.0)**: step t+1's network is submitted before the host reads step t's token, so the GPU no longer idles while the host samples. M3 Max, 70 s song, `8bit-lean`, A/B/B/A ×3 with cool-down: semantic 115.3 → 125.5 tok/s (+8.8 %), score 108.8 → 117.2 tok/s (+7.8 %); per token −12 % in `4bit-lean` (5.63 → 4.96 ms), −8.6 % in `8bit-lean` (8.25 → 7.54 ms). Tokens, cache and latents are bit-identical. Fusing q/k/v and gate/up gained nothing, and mixing 4-bit layers into the 8-bit AR lost quality as fast as it gained speed.
+
 ### iPhone 15 Pro Max (A17 Pro, 8 GB, iOS 27.0)
 
 `int4-mixed-head` pack, fp16, stage-scoped residency, mobile profile (`docs/knowledge/benchmarks/iphone-15-pro-max-2026-09-22.md`):

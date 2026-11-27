@@ -160,6 +160,11 @@ extension TokenGenerator {
                 if let negativeCache {
                     nextUnconditional = head.logits(hidden: decodeStep(tokenInput, negativeCache)).reshaped([1, n])
                 }
+                if YuE2ExecutionPolicy.deepPipeline {
+                    // Queue step t+1's network behind step t's draw now, instead of at the next
+                    // iteration's `asyncEval(nextArray)`, after the host has read `next`.
+                    asyncEval([nextConditional!] + (nextUnconditional.map { [$0] } ?? []))
+                }
             }
 
             let local = Int(nextArray.item(UInt32.self))

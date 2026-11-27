@@ -2,6 +2,10 @@
 
 Published versions are squashed commits on `main`, merged through a pull request (the working history stays local); each version has a tag and a GitHub release.
 
+## 1.13.0 — 2026-11-27
+
+- **Faster AR phases, same songs**: each step's network is submitted to the GPU before the host reads the previous token (deep pipeline), so the GPU no longer waits for sampling between two steps. On an M3 Max (70 s song, `8bit-lean`): semantic phase 115.3 → 125.5 tok/s (+8.8 %), score phase 108.8 → 117.2 tok/s (+7.8 %); −12 % per token in `4bit-lean`. Score tokens, semantic tokens, KV cache and latents are bit-identical to 1.12.2. Always on, no option. Not yet measured on an iPhone.
+
 ## 1.12.2 — 2026-11-26
 
 - **CJK lyrics timed character by character** (#7, reported by Simon Law): a line written without spaces was one word, so `timeline.json` gave it one timing. Han characters and kana are now one word each (small kana and `ー` stay with the character before them, CJK punctuation separates), Hangul words count one syllable per block. Words spelled by one shared token (the tokenizer merges `今天`) share its attention segment and are placed by the score. On a 41 s Mandopop render, 13/8/8 timed characters per line; against Whisper, ≈ 0.3 s on the verses, 0.5-1 s on the chorus.

@@ -74,6 +74,12 @@ public enum YuE2ExecutionPolicy {
     nonisolated(unsafe) public static var compiledDecode: Bool =
         ProcessInfo.processInfo.environment["YUE2_COMPILED_DECODE"] == "1"
 
+    /// Submits step t+1's AR forward as soon as it is built, before the host reads step t's
+    /// token, so the GPU does not wait for the host between two steps (−8 to −12 % per token on
+    /// an M3 Max). Same graph, same order: tokens and cache are bit-identical. Always on; internal
+    /// so the identity test can compare both paths.
+    nonisolated(unsafe) static var deepPipeline = true
+
     /// Default `.packed`; `YUE2_NAR_COMPUTE=dequantized` overrides (measurements, Mac).
     nonisolated(unsafe) public static var narCompute: NARCompute = {
         ProcessInfo.processInfo.environment["YUE2_NAR_COMPUTE"].flatMap(NARCompute.init(rawValue:)) ?? .packed
